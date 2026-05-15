@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32-S3 HKR Robot Middleware - Architecture Report</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text2: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #79c0ff;
+    --green: #3fb950;
+    --yellow: #d2991d;
+    --red: #f85149;
+    --purple: #a371f7;
+    --orange: #d18616;
+    --cyan: #39d2c0;
+    --pink: #f778ba;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 1.5rem 2rem;
+    position: sticky; top:0; z-index:100;
+  }
+  header h1 { font-size: 1.5rem; font-weight: 700; color: var(--accent2); }
+  header .sub { font-size: 0.85rem; color: var(--text2); margin-top: 0.25rem; }
+
+  nav.tabs {
+    display: flex;
+    background: var(--surface2);
+    border-bottom: 2px solid var(--border);
+    gap: 0;
+    overflow-x: auto;
+    position: sticky; top: 84px; z-index:99;
+  }
+  nav.tabs button {
+    flex: 0 0 auto;
+    padding: 0.85rem 1.5rem;
+    background: none;
+    border: none;
+    color: var(--text2);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  nav.tabs button:hover { color: var(--text); background: rgba(88,166,255,0.05); }
+  nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+  .tab-panel { display: none; animation: fadeIn 0.3s ease; }
+  .tab-panel.active { display: block; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .card h2 { font-size: 1.15rem; color: var(--accent2); margin-bottom: 0.75rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  .card h3 { font-size: 1rem; color: var(--text); margin: 1.25rem 0 0.5rem; }
+  .card h3:first-of-type { margin-top: 0; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; }
+  .stat { background: var(--surface2); border-radius: 6px; padding: 1rem; text-align: center; border: 1px solid var(--border); }
+  .stat .num { font-size: 2rem; font-weight: 700; color: var(--accent); }
+  .stat .label { font-size: 0.8rem; color: var(--text2); margin-top: 0.25rem; }
+
+  table { width:100%; border-collapse:collapse; font-size:0.88rem; }
+  thead th { background: var(--surface2); padding:0.6rem 0.8rem; text-align:left; color: var(--accent2); font-weight:600; border-bottom:2px solid var(--border); position:sticky; top:0; }
+  tbody td { padding:0.55rem 0.8rem; border-bottom:1px solid var(--border); vertical-align:top; }
+  tbody tr:hover { background: rgba(88,166,255,0.04); }
+  td.fn { font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace; font-size:0.82rem; color: var(--accent); }
+  td.file { font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace; font-size:0.82rem; color: var(--cyan); }
+  td.desc { color: var(--text2); }
+  td.mono, td.pin { font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace; font-size:0.8rem; }
+
+  .badge { display:inline-block; padding:0.15em 0.5em; border-radius:4px; font-size:0.72rem; font-weight:600; white-space:nowrap; }
+  .badge-c { background:#555; color:#fff; }
+  .badge-cpp { background:#f34b7d; color:#fff; }
+  .badge-h { background:#2b7489; color:#fff; }
+  .badge-py { background:#3572A5; color:#fff; }
+  .badge-core { background: var(--purple); color:#fff; }
+  .badge-driver { background: var(--green); color:#000; }
+  .badge-comms { background: var(--orange); color:#000; }
+  .badge-cloud { background: var(--accent); color:#000; }
+  .badge-ui { background: var(--cyan); color:#000; }
+  .badge-asset { background: var(--pink); color:#000; }
+
+  /* ====== FLOWCHART STYLES ====== */
+  .flow-box {
+    display: inline-block;
+    border: 1.5px solid;
+    border-radius: 6px;
+    padding: 0.4rem 0.8rem;
+    margin: 0.2rem;
+    font-size: 0.82rem;
+    font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .flow-box.solid  { border-color: var(--accent); background: rgba(88,166,255,0.1); color: var(--accent2); }
+  .flow-box.dashed { border-color: var(--green); background: rgba(63,185,80,0.1); color: var(--green); border-style: dashed; }
+  .flow-box.red    { border-color: var(--red); background: rgba(248,81,73,0.1); color: var(--red); }
+  .flow-box.purple { border-color: var(--purple); background: rgba(163,113,247,0.1); color: var(--purple); }
+  .flow-box.orange { border-color: var(--orange); background: rgba(209,134,22,0.1); color: var(--orange); }
+  .flow-box.cyan   { border-color: var(--cyan); background: rgba(57,210,192,0.1); color: var(--cyan); }
+  .flow-box.yellow { border-color: var(--yellow); background: rgba(210,153,29,0.1); color: var(--yellow); }
+  .flow-box.green  { border-color: var(--green); background: rgba(63,185,80,0.1); color: var(--green); }
+  .flow-box.gray   { border-color: var(--text2); background: rgba(139,148,158,0.1); color: var(--text2); }
+
+  .flow-row { display:flex; align-items:center; flex-wrap:wrap; gap:0.3rem; margin:0.3rem 0; }
+  .flow-col { display:flex; flex-direction:column; align-items:center; gap:0.3rem; margin:0.3rem 0; }
+  .arrow { color: var(--text2); font-weight:bold; font-size:1.1rem; margin:0 0.2rem; }
+  .arrow-down { color: var(--text2); font-weight:bold; font-size:1.2rem; }
+  .arrow-label { font-size:0.72rem; color: var(--text2); font-style:italic; }
+
+  .flow-container {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    overflow-x: auto;
+  }
+
+  /* ====== STATE MACHINE STYLES ====== */
+  .state-node {
+    display: inline-flex; align-items:center; justify-content:center;
+    border:2px solid; border-radius:20px;
+    padding: 0.5rem 1rem; margin: 0.2rem;
+    font-size:0.82rem; font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    white-space:nowrap; min-width: 80px;
+  }
+  .state-node.active   { border-color: var(--green); background: rgba(63,185,80,0.12); color: var(--green); }
+  .state-node.idle     { border-color: var(--accent); background: rgba(88,166,255,0.1); color: var(--accent2); }
+  .state-node.error    { border-color: var(--red); background: rgba(248,81,73,0.1); color: var(--red); }
+  .state-node.warning  { border-color: var(--yellow); background: rgba(210,153,29,0.1); color: var(--yellow); }
+  .state-node.start    { border-color: var(--text2); background: rgba(139,148,158,0.1); color: var(--text2); }
+  .state-node.purple   { border-color: var(--purple); background: rgba(163,113,247,0.1); color: var(--purple); }
+
+  .state-row { display:flex; align-items:center; flex-wrap:wrap; gap:0.3rem; justify-content:center; margin:0.4rem 0; }
+  .state-edge { font-size:0.78rem; color: var(--text2); margin:0 0.3rem; white-space:nowrap; }
+  .state-note {
+    font-size:0.75rem; color: var(--text2); background: rgba(88,166,255,0.05);
+    border-left:3px solid var(--border); padding:0.4rem 0.8rem; margin:0.5rem 0; border-radius:0 4px 4px 0;
+  }
+
+  /* ====== SEQUENCE DIAGRAM ====== */
+  .seq-row { display:flex; align-items:flex-start; gap:0.5rem; margin:0.25rem 0; font-size:0.82rem; }
+  .seq-actor { min-width:80px; font-weight:600; text-align:right; padding:0.15rem 0.4rem; }
+  .seq-line { min-width:30px; text-align:center; color:var(--text2); font-family:monospace; }
+  .seq-msg  { padding:0.15rem 0.4rem; border-radius:4px; white-space:nowrap; }
+  .seq-msg.solid  { border:1px solid var(--accent); background: rgba(88,166,255,0.08); }
+  .seq-msg.dashed { border:1px dashed var(--green); background: rgba(63,185,80,0.08); }
+  .seq-msg.red    { border:1px solid var(--red); background: rgba(248,81,73,0.08); }
+
+  /* ====== PIN TABLE ====== */
+  .pin-table td:first-child { font-weight:600; }
+  .pin-used   { color: var(--green); }
+  .pin-free   { color: var(--text2); }
+  .pin-conflict { color: var(--red); font-weight:bold; }
+
+  /* ====== PARTITION TABLE ====== */
+  .partition-bar {
+    display:flex; height:40px; border-radius:6px; overflow:hidden;
+    border:1px solid var(--border); margin:0.5rem 0; position:relative;
+  }
+  .partition-bar .part {
+    display:flex; align-items:center; justify-content:center;
+    font-size:0.72rem; font-weight:600; color:#fff; overflow:hidden;
+    transition: all 0.2s; cursor:default;
+  }
+  .partition-bar .part:hover { filter:brightness(1.3); }
+  .partition-legend { display:flex; flex-wrap:wrap; gap:1rem; margin:0.5rem 0; }
+
+  code { font-family: 'Cascadia Code','Fira Code','JetBrains Mono',monospace; font-size:0.85em; }
+  pre.code { background: #0d1117; border:1px solid var(--border); border-radius:6px; padding:1rem; overflow-x:auto; font-size:0.82rem; line-height:1.5; }
+
+  .collapsible {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+  }
+  .collapsible summary {
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--accent2);
+    user-select: none;
+  }
+  .collapsible summary:hover { background: rgba(88,166,255,0.05); }
+  .collapsible .content { padding: 0.5rem 1rem 1rem; }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+
+  footer { text-align:center; padding:2rem; color:var(--text2); font-size:0.8rem; border-top:1px solid var(--border); margin-top:2rem; }
+
+  @media (max-width:768px) {
+    main { padding:1rem; }
+    .grid { grid-template-columns:1fr; }
+    header h1 { font-size:1.2rem; }
+    nav.tabs button { padding:0.7rem 1rem; font-size:0.8rem; }
+    .flow-row { justify-content:center; }
+    .seq-row { font-size:0.75rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ESP32-S3 HKR Robot Middleware</h1>
+  <div class="sub">Project P169H002 &middot; ESP-IDF Framework &middot; Generated 2026-05-13</div>
+</header>
+
+<nav class="tabs">
+  <button class="active" data-tab="overview">Project Overview</button>
+  <button data-tab="pinmap">Pin Distribution</button>
+  <button data-tab="files">Files &amp; Dependencies</button>
+  <button data-tab="datastruct">Data Structures</button>
+  <button data-tab="diagrams">Diagrams &amp; Flow</button>
+  <button data-tab="partition">Partition &amp; Memory</button>
+</nav>
+
+<main>
+
+<!-- ============================================================ -->
+<!-- TAB 1: Project Overview -->
+<!-- ============================================================ -->
+<div id="tab-overview" class="tab-panel active">
+
+  <div class="card">
+    <h2>System Architecture Summary</h2>
+    <p>The <strong>HKR Robot Middleware</strong> is an ESP32-S3 based embedded system that bridges a mobile phone (BLE), an ODrive motor controller (UART), and various peripherals (LCD touch display, servo motor, audio codec). It also integrates cloud AI services via Dify Chat API and Google Cloud TTS/SST.</p>
+  </div>
+
+  <div class="grid">
+    <div class="stat"><div class="num">18</div><div class="label">Source Files (.c/.cpp)</div></div>
+    <div class="stat"><div class="num">20</div><div class="label">Header Files (.h)</div></div>
+    <div class="stat"><div class="num">7</div><div class="label">RTOS Tasks</div></div>
+    <div class="stat"><div class="num">9</div><div class="label">Major Modules</div></div>
+    <div class="stat"><div class="num">8</div><div class="label">RGB565 Image Assets</div></div>
+    <div class="stat"><div class="num">5</div><div class="label">Communication Buses</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Hardware Pin Map</h2>
+    <table>
+      <thead><tr><th>Peripheral</th><th>Pins</th><th>Protocol</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td class="fn">LCD Display</td><td class="mono">SCK=14, MOSI=15, RES=16, DC=17, CS=18, BLK=48</td><td>SPI (SPI2_HOST)</td><td class="desc">284x240 TFT (ST7789 compatible), 26MHz</td></tr>
+        <tr><td class="fn">Touch Panel</td><td class="mono">SDA=8, SCL=9, RST=21, INT=47</td><td>I2C (Software)</td><td class="desc">CST816 capacitive touch, addr=0x15</td></tr>
+        <tr><td class="fn">ODrive UART</td><td class="mono">TX=37, RX=36</td><td>UART (UART_NUM_1)</td><td class="desc">115200 baud, ODrive motor controller</td></tr>
+        <tr><td class="fn">BLE</td><td class="mono">Internal</td><td>BLE 5.0 (NimBLE)</td><td class="desc">Nordic UART Service, "HKR_Robot"</td></tr>
+        <tr><td class="fn">Servo Motor</td><td class="mono">GPIO=41</td><td>PWM (LEDC_TIMER_0)</td><td class="desc">50Hz, 14-bit resolution, MG90</td></tr>
+        <tr><td class="fn">LED Indicators</td><td class="mono">LED1=5, LED2=6, LED3=7, LED4=4</td><td>GPIO Output</td><td class="desc">Status: ODrive comm, M0/M1 enable, BLE conn</td></tr>
+        <tr><td class="fn">Key Inputs</td><td class="mono">KEY1=38, KEY2=45, KEY3=46, KEY4=3</td><td>GPIO Input</td><td class="desc">M0 stop, M1 stop, Clear error, Audio beep</td></tr>
+        <tr><td class="fn">Audio PWM</td><td class="mono">GPIO=42</td><td>PWM (LEDC_TIMER_1)</td><td class="desc">NS4150 amplifier, 10-bit, 1kHz beep</td></tr>
+        <tr><td class="fn">Audio I2S</td><td class="mono">MCLK=38, BCK=4, WS=5, DIN=6, DOUT=7</td><td>I2S (I2S_NUM_0)</td><td class="desc">ES8388 codec, 16kHz, 16-bit mono</td></tr>
+        <tr><td class="fn">Audio I2C</td><td class="mono">SDA=1, SCL=2</td><td>I2C (I2C_NUM_0)</td><td class="desc">ES8388 register config, addr=0x10</td></tr>
+        <tr><td class="fn">Backup UART</td><td class="mono">RX=1, TX=2</td><td>UART (UART_NUM_2)</td><td class="desc">Reserved debug, 115200</td></tr>
+        <tr><td class="fn">SD Card (Reserved)</td><td class="mono">CS=10, MOSI=11, CLK=12, MISO=13</td><td>SPI</td><td class="desc">Not currently in use</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>RTOS Task Inventory</h2>
+    <table>
+      <thead><tr><th>Task Name</th><th>Stack</th><th>Prio</th><th>Source</th><th>Role</th></tr></thead>
+      <tbody>
+        <tr><td class="fn">key_scan</td><td class="mono">2048</td><td>3</td><td class="file">main.c</td><td class="desc">50ms key polling, rising-edge triggers: M0 stop / M1 stop / Clear error / Beep</td></tr>
+        <tr><td class="fn">odrive_lcd</td><td class="mono">3072</td><td>2</td><td class="file">main.c</td><td class="desc">ODrive status LCD refresh (~2Hz), bottom 32px status bar</td></tr>
+        <tr><td class="fn">odrive_rx</td><td class="mono">4096</td><td>5</td><td class="file">odrive_uart.c</td><td class="desc">UART RX: reads bytes, assembles lines, parses $ST frames</td></tr>
+        <tr><td class="fn">nimble_host</td><td class="mono">--</td><td>--</td><td class="file">ble_uart.c</td><td class="desc">NimBLE host (internal, via nimble_port_freertos_init)</td></tr>
+        <tr><td class="fn">servo_random</td><td class="mono">4096</td><td>1</td><td class="file">servo_control.c</td><td class="desc">Random servo motion: picks target angle / duration / pause in loop</td></tr>
+        <tr><td class="fn">sst_capture</td><td class="mono">4096</td><td>6</td><td class="file">tts_sst_demo.cpp</td><td class="desc">Audio capture from ES8388 ADC, RMS logging, feeds AudioProcessor</td></tr>
+        <tr><td class="fn">dify_console</td><td class="mono">4096</td><td>5</td><td class="file">dify_chat.c</td><td class="desc">stdin reader: enqueues user messages for Dify chat (currently disabled)</td></tr>
+        <tr><td class="fn">dify_worker</td><td class="mono">8192</td><td>6</td><td class="file">dify_chat.c</td><td class="desc">HTTP worker: dequeues messages, POSTs to Dify API, prints response</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- TAB 2: Pin Distribution -->
+<!-- ============================================================ -->
+<div id="tab-pinmap" class="tab-panel">
+
+  <div class="card">
+    <h2>ESP32-S3 GPIO Pin Distribution (0-48)</h2>
+    <p style="margin-bottom:1rem;">Total GPIOs used: <strong>27</strong> of 49. Some pins have dual functions (e.g., IO1/IO2 serve both I2C and Backup UART).</p>
+
+    <table class="pin-table">
+      <thead><tr><th>GPIO</th><th>Primary Function</th><th>Secondary Function</th><th>Direction</th><th>Pull</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">0</td><td class="desc">(Strapping pin - Boot)</td><td>--</td><td>--</td><td>--</td><td class="pin-free">RESERVED</td></tr>
+        <tr><td class="mono">1</td><td><span class="badge badge-driver">I2C SDA</span> (ES8388)</td><td><span class="badge badge-comms">Backup UART RX</span></td><td>I/O</td><td>Pull-up</td><td class="pin-used">Used (shared)</td></tr>
+        <tr><td class="mono">2</td><td><span class="badge badge-driver">I2C SCL</span> (ES8388)</td><td><span class="badge badge-comms">Backup UART TX</span></td><td>I/O</td><td>Pull-up</td><td class="pin-used">Used (shared)</td></tr>
+        <tr><td class="mono">3</td><td colspan="2"><span class="badge badge-core">KEY4</span> (Audio beep trigger)</td><td>Input</td><td>Pull-down</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">4</td><td colspan="2"><span class="badge badge-core">LED4</span> (BLE connection indicator)</td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">5</td><td colspan="2"><span class="badge badge-core">LED1</span> (ODrive comm indicator)</td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">6</td><td colspan="2"><span class="badge badge-core">LED2</span> (M0 enable indicator)</td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">7</td><td colspan="2"><span class="badge badge-core">LED3</span> (M1 enable indicator)</td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">8</td><td colspan="2"><span class="badge badge-driver">Touch I2C SDA</span> (CST816)</td><td>I/O</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">9</td><td colspan="2"><span class="badge badge-driver">Touch I2C SCL</span> (CST816)</td><td>I/O</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">10</td><td colspan="2"><span class="badge badge-core">SD_CS</span> (Reserved)</td><td>Output</td><td>--</td><td class="pin-free">Reserved</td></tr>
+        <tr><td class="mono">11</td><td colspan="2"><span class="badge badge-core">SD_MOSI</span> (Reserved)</td><td>Output</td><td>--</td><td class="pin-free">Reserved</td></tr>
+        <tr><td class="mono">12</td><td colspan="2"><span class="badge badge-core">SD_CLK</span> (Reserved)</td><td>Output</td><td>--</td><td class="pin-free">Reserved</td></tr>
+        <tr><td class="mono">13</td><td colspan="2"><span class="badge badge-core">SD_MISO</span> (Reserved)</td><td>Input</td><td>--</td><td class="pin-free">Reserved</td></tr>
+        <tr><td class="mono">14</td><td colspan="2"><span class="badge badge-ui">LCD SCK</span> (SPI Clock)</td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">15</td><td colspan="2"><span class="badge badge-ui">LCD MOSI</span> (SPI Data)</td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">16</td><td colspan="2"><span class="badge badge-ui">LCD RES</span> (Reset)</td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">17</td><td colspan="2"><span class="badge badge-ui">LCD DC</span> (Data/Command)</td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">18</td><td colspan="2"><span class="badge badge-ui">LCD CS</span> (Chip Select)</td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">19</td><td colspan="2">(USB D-)</td><td>--</td><td>--</td><td class="pin-free">USB</td></tr>
+        <tr><td class="mono">20</td><td colspan="2">(USB D+)</td><td>--</td><td>--</td><td class="pin-free">USB</td></tr>
+        <tr><td class="mono">21</td><td colspan="2"><span class="badge badge-driver">Touch RST</span> (CST816 reset)</td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">22-25</td><td colspan="2" class="desc">(Unused)</td><td>--</td><td>--</td><td class="pin-free">Free</td></tr>
+        <tr><td class="mono">26-32</td><td colspan="2" class="desc">(PSRAM OCTAL: typically occupied)</td><td>--</td><td>--</td><td class="pin-free">PSRAM</td></tr>
+        <tr><td class="mono">33-34</td><td colspan="2" class="desc">(Unused)</td><td>--</td><td>--</td><td class="pin-free">Free</td></tr>
+        <tr><td class="mono">35</td><td colspan="2">(PSRAM / Unused)</td><td>--</td><td>--</td><td class="pin-free">PSRAM</td></tr>
+        <tr><td class="mono">36</td><td colspan="2"><span class="badge badge-comms">ODrive UART RX</span></td><td>Input</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">37</td><td colspan="2"><span class="badge badge-comms">ODrive UART TX</span></td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">38</td><td colspan="2"><span class="badge badge-core">KEY1</span> (M0 emergency stop)</td><td>Input</td><td>Pull-down</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">39-40</td><td colspan="2" class="desc">(Unused)</td><td>--</td><td>--</td><td class="pin-free">Free</td></tr>
+        <tr><td class="mono">41</td><td><span class="badge badge-driver">Servo PWM</span></td><td><span class="badge badge-driver">SPK_EN</span> (Speaker PA)</td><td>Output</td><td>--</td><td class="pin-conflict">CONFLICT!</td></tr>
+        <tr><td class="mono">42</td><td colspan="2"><span class="badge badge-core">Audio PWM</span> (NS4150)</td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">43-44</td><td colspan="2" class="desc">(Unused)</td><td>--</td><td>--</td><td class="pin-free">Free</td></tr>
+        <tr><td class="mono">45</td><td colspan="2"><span class="badge badge-core">KEY2</span> (M1 emergency stop)</td><td>Input</td><td>Pull-down</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">46</td><td colspan="2"><span class="badge badge-core">KEY3</span> (Clear errors)</td><td>Input</td><td>Pull-down</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">47</td><td colspan="2"><span class="badge badge-driver">Touch INT</span> (CST816 interrupt)</td><td>Input</td><td>--</td><td class="pin-used">Used</td></tr>
+        <tr><td class="mono">48</td><td colspan="2"><span class="badge badge-ui">LCD BLK</span> (Backlight)</td><td>Output</td><td>--</td><td class="pin-used">Used</td></tr>
+      </tbody>
+    </table>
+
+    <div class="state-note" style="margin-top:1rem; border-left-color: var(--red);">
+      <strong style="color:var(--red);">WARNING:</strong> GPIO41 is shared between <code>Servo PWM</code> (servo_control.h) and <code>SPK_EN/PA_GPIO</code> (tts_sst_demo.cpp). If both servo and audio output are enabled simultaneously, they will conflict. Currently the servo random motion task runs by default; the TTS/SST path is disabled in app_main.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Pin Summary by Function Group</h2>
+    <div class="grid">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem;">
+        <h3 style="color:var(--accent2);margin:0 0 0.5rem;">SPI (LCD)</h3>
+        <table><tbody>
+          <tr><td class="mono">SCK=14</td><td class="mono">MOSI=15</td><td class="mono">CS=18</td></tr>
+          <tr><td class="mono">DC=17</td><td class="mono">RES=16</td><td class="mono">BLK=48</td></tr>
+        </tbody></table>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem;">
+        <h3 style="color:var(--green);margin:0 0 0.5rem;">I2C #0 (Audio Codec)</h3>
+        <table><tbody>
+          <tr><td class="mono">SDA=1</td><td class="mono">SCL=2</td><td class="desc">ES8388 @ 0x10</td></tr>
+        </tbody></table>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem;">
+        <h3 style="color:var(--cyan);margin:0 0 0.5rem;">I2C (Touch - Software)</h3>
+        <table><tbody>
+          <tr><td class="mono">SDA=8</td><td class="mono">SCL=9</td><td class="desc">CST816 @ 0x15</td></tr>
+          <tr><td class="mono">RST=21</td><td class="mono">INT=47</td><td></td></tr>
+        </tbody></table>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem;">
+        <h3 style="color:var(--orange);margin:0 0 0.5rem;">UART #1 (ODrive)</h3>
+        <table><tbody>
+          <tr><td class="mono">TX=37</td><td class="mono">RX=36</td><td class="desc">115200 8N1</td></tr>
+        </tbody></table>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem;">
+        <h3 style="color:var(--yellow);margin:0 0 0.5rem;">UART #2 (Backup)</h3>
+        <table><tbody>
+          <tr><td class="mono">TX=2</td><td class="mono">RX=1</td><td class="desc">115200 8N1</td></tr>
+        </tbody></table>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem;">
+        <h3 style="color:var(--purple);margin:0 0 0.5rem;">I2S #0 (Audio)</h3>
+        <table><tbody>
+          <tr><td class="mono">MCLK=38</td><td class="mono">BCK=4</td><td class="mono">WS=5</td></tr>
+          <tr><td class="mono">DIN=6</td><td class="mono">DOUT=7</td><td></td></tr>
+        </tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Free GPIOs (Available for Expansion)</h2>
+    <p>
+      <span class="badge badge-driver" style="margin:0.15rem;">22</span>
+      <span class="badge badge-driver" style="margin:0.15rem;">23</span>
+      <span class="badge badge-driver" style="margin:0.15rem;">24</span>
+      <span class="badge badge-driver" style="margin:0.15rem;">25</span>
+      <span class="badge badge-driver" style="margin:0.15rem;">33</span>
+      <span class="badge badge-driver" style="margin:0.15rem;">34</span>
+      <span class="badge badge-driver" style="margin:0.15rem;">39</span>
+      <span class="badge badge-driver" style="margin:0.15rem;">40</span>
+      <span class="badge badge-driver" style="margin:0.15rem;">43</span>
+      <span class="badge badge-driver" style="margin:0.15rem;">44</span>
+    </p>
+    <p style="margin-top:0.5rem; color:var(--text2);">SD card reserved pins (10-13) can also be repurposed if SD is not needed. GPIO 19-20 are USB D-/D+ and should not be used as GPIO.</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- TAB 3: Files & Dependencies -->
+<!-- ============================================================ -->
+<div id="tab-files" class="tab-panel">
+
+  <div class="card">
+    <h2>Module Inventory</h2>
+    <table>
+      <thead><tr><th>Module</th><th>Files</th><th>Type</th><th>Category</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td class="fn">Application Entry</td><td class="file">main.c</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-core">Core</span></td><td class="desc">app_main orchestrator, task creation, BLE-ODrive bridge callbacks, dual-mode expression engine</td></tr>
+        <tr><td class="fn">BLE UART</td><td class="file">ble_uart.c / .h</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-comms">Comms</span></td><td class="desc">NimBLE NUS, GAP/GATT, advertising "HKR_Robot", RX forwarding to ODrive</td></tr>
+        <tr><td class="fn">ODrive UART</td><td class="file">odrive_uart.c / .h</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-comms">Comms</span></td><td class="desc">$ST frame parser (14 fields), UART TX/RX, LCD status display, LED status indicators</td></tr>
+        <tr><td class="fn">Peripheral Control</td><td class="file">peripheral_ctrl.c / .h</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-driver">Driver</span></td><td class="desc">LED GPIO, Key input, Audio PWM (NS4150), Backup UART, all shared pin defs</td></tr>
+        <tr><td class="fn">Servo Control</td><td class="file">servo_control.c / .h</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-driver">Driver</span></td><td class="desc">PWM servo with cubic spline interpolation (S-curve), random motion task</td></tr>
+        <tr><td class="fn">LCD Driver</td><td class="file">lcd_init.c / .h</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-driver">Driver</span></td><td class="desc">ST7789 SPI init, register sequence, address window, backlight control</td></tr>
+        <tr><td class="fn">LCD Graphics</td><td class="file">lcd.c / .h</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-ui">UI</span></td><td class="desc">Drawing primitives, RGB565 blit, Chinese text, expression engine, dual-mode interactive</td></tr>
+        <tr><td class="fn">LCD Demo</td><td class="file">lcd_demo.c / .h</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-ui">UI</span></td><td class="desc">State machine demo: Logo/Text/Image/ColorBar/Grayscale/Countdown/Handwriting</td></tr>
+        <tr><td class="fn">Touch Controller</td><td class="file">cst816.c / .h</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-driver">Driver</span></td><td class="desc">CST816 capacitive touch, gesture detection (swipe/tap/long-press), I2C config</td></tr>
+        <tr><td class="fn">Software I2C</td><td class="file">iic_hal.c / .h</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-driver">Driver</span></td><td class="desc">Bit-banged I2C master (Start/Stop/Ack/Read/Write) via GPIO</td></tr>
+        <tr><td class="fn">JPEG Decoder</td><td class="file">jpeg_decoder.c / .h</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-ui">UI</span></td><td class="desc">TJpgDec wrapper: embedded JPEG to RGB565 playback with loop modes</td></tr>
+        <tr><td class="fn">TJpgDec Library</td><td class="file">tjpgd.c / .h</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-ui">UI</span></td><td class="desc">Tiny JPEG Decompressor (ChaN), JDEC/JRESULT API</td></tr>
+        <tr><td class="fn">Audio Codec</td><td class="file">es8388_audio_codec.cpp / .h</td><td><span class="badge badge-cpp">C++</span></td><td><span class="badge badge-driver">Driver</span></td><td class="desc">ES8388 I2C register config, I2S driver (16-bit mono), Speaker PA GPIO enable</td></tr>
+        <tr><td class="fn">Audio Processor</td><td class="file">audio_processor.cpp / .h</td><td><span class="badge badge-cpp">C++</span></td><td><span class="badge badge-core">Core</span></td><td class="desc">Audio pipeline stub: forwards PCM samples to output callback, ready for AFE/STT</td></tr>
+        <tr><td class="fn">TTS / SST Demo</td><td class="file">tts_sst_demo.cpp / .h</td><td><span class="badge badge-cpp">C++</span></td><td><span class="badge badge-cloud">Cloud</span></td><td class="desc">Sine-wave TTS simulation, mic capture with RMS logging, Google API stubs</td></tr>
+        <tr><td class="fn">Dify Chat</td><td class="file">dify_chat.c / .h</td><td><span class="badge badge-c">C</span></td><td><span class="badge badge-cloud">Cloud</span></td><td class="desc">WiFi STA, SNTP time sync, Dify HTTP POST (cJSON), conversation ID tracking</td></tr>
+        <tr><td class="fn">Private Config</td><td class="file">private_config.h</td><td><span class="badge badge-h">Header</span></td><td><span class="badge badge-core">Core</span></td><td class="desc">Google Cloud API key (excluded from git)</td></tr>
+        <tr><td class="fn">RGB565 Images</td><td class="file">Inc/*_rgb565.h (8 files)</td><td><span class="badge badge-h">Asset</span></td><td><span class="badge badge-asset">Asset</span></td><td class="desc">Auto-generated 16-bit color arrays: idle/haQi/angry/closeeye/smile x robot+YNF</td></tr>
+        <tr><td class="fn">Tools</td><td class="file">tools/jpeg_to_rgb565.py</td><td><span class="badge badge-py">Python</span></td><td><span class="badge badge-core">Tool</span></td><td class="desc">JPEG to RGB565 C header converter</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Inter-Module Dependency Graph</h2>
+    <div class="flow-container">
+      <div class="flow-col" style="gap:0.6rem;">
+
+        <!-- Top layer: main.c -->
+        <div class="flow-row">
+          <span class="flow-box purple">main.c<br/>app_main()</span>
+        </div>
+
+        <div style="display:flex;gap:0.3rem;flex-wrap:wrap;justify-content:center;margin:0.3rem 0;">
+          <span class="arrow-down">include / call</span>
+        </div>
+
+        <!-- Middle layer: modules -->
+        <div class="flow-row" style="justify-content:center;">
+          <span class="flow-box solid">peripheral_ctrl</span>
+          <span class="flow-box cyan">ble_uart</span>
+          <span class="flow-box green">odrive_uart</span>
+          <span class="flow-box orange">servo_control</span>
+          <span class="flow-box red">lcd / lcd_init</span>
+          <span class="flow-box yellow">cst816</span>
+          <span class="flow-box gray">jpeg_decoder</span>
+          <span class="flow-box dashed">dify_chat</span>
+          <span class="flow-box dashed">tts_sst_demo</span>
+        </div>
+
+        <div style="display:flex;gap:0.3rem;flex-wrap:wrap;justify-content:center;margin:0.3rem 0;">
+          <span class="arrow-down">ESP-IDF dependencies</span>
+        </div>
+
+        <!-- Bottom layer: ESP-IDF -->
+        <div class="flow-row" style="justify-content:center;">
+          <span class="flow-box gray">FreeRTOS</span>
+          <span class="flow-box gray">SPI Driver</span>
+          <span class="flow-box gray">I2C Driver</span>
+          <span class="flow-box gray">I2S Driver</span>
+          <span class="flow-box gray">UART Driver</span>
+          <span class="flow-box gray">LEDC PWM</span>
+          <span class="flow-box gray">NimBLE</span>
+          <span class="flow-box gray">WiFi</span>
+          <span class="flow-box gray">HTTP Client</span>
+        </div>
+      </div>
+
+      <div style="margin-top:1rem; padding:0.8rem; background:rgba(88,166,255,0.04); border-radius:6px; font-size:0.8rem;">
+        <strong>Key dependencies:</strong><br>
+        &bull; <code>main.c</code> includes all module headers; app_main() calls init for all subsystems<br>
+        &bull; <code>ble_uart.c</code> depends on <code>peripheral_ctrl.h</code> (LED4 for BLE status)<br>
+        &bull; <code>odrive_uart.c</code> depends on <code>peripheral_ctrl.h</code> (LED1-3) and <code>lcd.h</code> (status bar)<br>
+        &bull; <code>dify_chat.c</code> is standalone (WiFi + HTTP), currently disabled via comment in main.c<br>
+        &bull; <code>tts_sst_demo.cpp</code> depends on <code>es8388_audio_codec</code>, <code>audio_processor</code>, <code>private_config.h</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Build System (CMake)</h2>
+    <p>Root <code>CMakeLists.txt</code> sets <code>PARTITION_CSV_PATH</code> to <code>partitions.csv</code>. Main component registers 18 source files with <code>idf_component_register()</code>.</p>
+    <p style="margin-top:0.5rem;">
+      <strong>REQUIRES:</strong>
+      <code>esp_wifi</code> <code>nvs_flash</code> <code>esp_http_client</code> <code>json</code>
+      <code>driver</code> <code>esp_timer</code> <code>bt</code> <code>spi_flash</code>
+    </p>
+    <p style="margin-top:0.5rem;"><strong>EMBED_FILES:</strong> <code>images/angry.jpg</code>, <code>images/haqi.jpg</code>, <code>images/idle.jpg</code></p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- TAB 4: Data Structures -->
+<!-- ============================================================ -->
+<div id="tab-datastruct" class="tab-panel">
+
+  <div class="card">
+    <h2>Core Structures &amp; Typedefs</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Kind</th><th>Defined In</th><th>Key Fields</th><th>Usage</th></tr></thead>
+      <tbody>
+        <tr><td class="fn">odrive_status_t</td><td>struct</td><td class="file">odrive_uart.h</td><td class="desc">vbus_v:float, drv_fault:int, m0_hall:u8, m0_count:int, m0_vel:float, m0_iq:float, m0_error:int, m0_status:u8, m1_hall, m1_count, m1_vel, m1_iq, m1_error, m1_status, timestamp_ms:u32, valid:bool</td><td class="desc">Parsed $ST telemetry. Mutex-protected between odrive_rx task and LCD task.</td></tr>
+        <tr><td class="fn">ble_uart_rx_cb_t</td><td>func ptr</td><td class="file">ble_uart.h</td><td class="desc"><code>void (*)(const uint8_t*, size_t)</code></td><td class="desc">BLE→ODrive forwarding callback (on_ble_rx in main.c)</td></tr>
+        <tr><td class="fn">odrive_ble_cb_t</td><td>func ptr</td><td class="file">odrive_uart.h</td><td class="desc"><code>void (*)(const uint8_t*, size_t)</code></td><td class="desc">ODrive→BLE forwarding callback (odrive_to_ble in main.c)</td></tr>
+        <tr><td class="fn">CST816_Info</td><td>struct</td><td class="file">cst816.h</td><td class="desc">X_Pos:uint, Y_Pos:uint</td><td class="desc">Global CST816_Instance, updated on touch events</td></tr>
+        <tr><td class="fn">GestureID_TypeDef</td><td>enum</td><td class="file">cst816.h</td><td class="desc">NOGESTURE=0x00, DOWNGLIDE, UPGLIDE, LEFTGLIDE, RIGHTGLIDE, CLICK, DOUBLECLICK=0x0B, LONGPRESS=0x0C</td><td class="desc">Touch gesture type identifiers</td></tr>
+        <tr><td class="fn">MotionMask_TypeDef</td><td>enum</td><td class="file">cst816.h</td><td class="desc">M_DISABLE=0x00, EnConLR, EnConUD, EnDClick, M_ALLENABLE=0x07</td><td class="desc">Gesture detection enable mask</td></tr>
+        <tr><td class="fn">AppState</td><td>enum</td><td class="file">lcd_demo.c</td><td class="desc">STATE_LOGO, STATE_TEXT, STATE_IMAGE, STATE_COLOR_FULL, STATE_COLOR_BAR, STATE_GRAYSCALE, STATE_COUNTDOWN, STATE_HANDWRITING</td><td class="desc">LCD demo state machine states</td></tr>
+        <tr><td class="fn">iic_bus_t</td><td>struct</td><td class="file">iic_hal.h</td><td class="desc">sda_pin:u8, scl_pin:u8</td><td class="desc">Software I2C bus descriptor</td></tr>
+        <tr><td class="fn">random_motion_params_t</td><td>struct</td><td class="file">servo_control.c</td><td class="desc">min_angle, max_angle, min/max_duration_ms, min/max_pause_ms</td><td class="desc">Private: random servo motion config</td></tr>
+        <tr><td class="fn">JPEG_INPUT</td><td>struct</td><td class="file">jpeg_decoder.c</td><td class="desc">data:const u8*, size:u32, index:u32</td><td class="desc">TJpgDec input stream wrapping embedded JPEG</td></tr>
+        <tr><td class="fn">JPEG_OUTPUT</td><td>struct</td><td class="file">jpeg_decoder.c</td><td class="desc">x:u16, y:u16</td><td class="desc">Current decode output position</td></tr>
+        <tr><td class="fn">Es8388AudioCodec</td><td>class</td><td class="file">es8388_audio_codec.h</td><td class="desc">i2s_port, i2c_port, i2c_addr, i2s_cfg, pin_cfg, sample_rate, pa_gpio</td><td class="desc">C++ wrapper for ES8388: Init/Write/Read/EnableOutput/EnableInput</td></tr>
+        <tr><td class="fn">AudioProcessor</td><td>class</td><td class="file">audio_processor.h</td><td class="desc">output_cb (function callback)</td><td class="desc">Stub pipeline: Initialize/Start/Stop/Input/OnOutput</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Key Global Variables &amp; Static State</h2>
+    <table>
+      <thead><tr><th>Variable</th><th>Scope</th><th>File</th><th>Type</th><th>Thread Safety</th></tr></thead>
+      <tbody>
+        <tr><td class="fn">s_status</td><td>static</td><td class="file">odrive_uart.c</td><td class="mono">odrive_status_t</td><td class="desc"><span class="badge badge-driver">Mutex</span> (s_status_mutex)</td></tr>
+        <tr><td class="fn">s_status_mutex</td><td>static</td><td class="file">odrive_uart.c</td><td class="mono">SemaphoreHandle_t</td><td class="desc">FreeRTOS mutex semaphore</td></tr>
+        <tr><td class="fn">s_conn_handle</td><td>static</td><td class="file">ble_uart.c</td><td class="mono">uint16_t</td><td class="desc"><span class="badge badge-comms">Single-task</span> (NimBLE host task only)</td></tr>
+        <tr><td class="fn">s_notify_enable</td><td>static</td><td class="file">ble_uart.c</td><td class="mono">bool</td><td class="desc"><span class="badge badge-comms">Single-task</span></td></tr>
+        <tr><td class="fn">s_rx_cb</td><td>static</td><td class="file">ble_uart.c</td><td class="mono">ble_uart_rx_cb_t</td><td class="desc">Set once at init, read-only after</td></tr>
+        <tr><td class="fn">s_ble_cb</td><td>static</td><td class="file">odrive_uart.c</td><td class="mono">odrive_ble_cb_t</td><td class="desc">Set once at init, read-only after</td></tr>
+        <tr><td class="fn">CST816_Instance</td><td>global</td><td class="file">cst816.c</td><td class="mono">CST816_Info</td><td class="desc"><span class="badge badge-ui">Polled</span> (single-threaded read)</td></tr>
+        <tr><td class="fn">current_angle</td><td>static</td><td class="file">servo_control.c</td><td class="mono">float</td><td class="desc"><span class="badge badge-driver">Single-task</span> (servo_random task only)</td></tr>
+        <tr><td class="fn">conversation_id</td><td>static</td><td class="file">dify_chat.c</td><td class="mono">char[256]</td><td class="desc"><span class="badge badge-cloud">Single-task</span> (dify_worker only)</td></tr>
+        <tr><td class="fn">g_codec</td><td>static</td><td class="file">tts_sst_demo.cpp</td><td class="mono">Es8388AudioCodec*</td><td class="desc">Set once at init</td></tr>
+        <tr><td class="fn">g_processor</td><td>static</td><td class="file">tts_sst_demo.cpp</td><td class="mono">AudioProcessor*</td><td class="desc">Set once at init</td></tr>
+        <tr><td class="fn">spi</td><td>global</td><td class="file">lcd_init.c</td><td class="mono">spi_device_handle_t</td><td class="desc"><span class="badge badge-ui">Single-task</span> (main thread only)</td></tr>
+        <tr><td class="fn">s_wifi_event_group</td><td>static</td><td class="file">dify_chat.c</td><td class="mono">EventGroupHandle_t</td><td class="desc">FreeRTOS event group</td></tr>
+        <tr><td class="fn">s_dify_queue</td><td>static</td><td class="file">dify_chat.c</td><td class="mono">QueueHandle_t</td><td class="desc">FreeRTOS queue (8 slots of char*)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- TAB 5: Diagrams & Flow -->
+<!-- ============================================================ -->
+<div id="tab-diagrams" class="tab-panel">
+
+  <!-- ===== Application Startup Sequence ===== -->
+  <div class="card">
+    <h2>Application Startup Sequence</h2>
+    <div class="flow-container">
+      <div class="flow-col">
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">ESP32 Boot</span><span class="seq-line">----></span><span class="seq-msg solid">Chip info, Flash size print</span><span style="font-size:0.72rem;color:var(--text2);margin-left:0.5rem;">main.c:114-131</span></div>
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">main</span><span class="seq-line">----></span><span class="seq-msg solid">peripheral_ctrl_init()</span><span style="font-size:0.72rem;color:var(--text2);margin-left:0.5rem;">GPIO, AudioPWM, BackupUART</span></div>
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">main</span><span class="seq-line">- - -></span><span class="seq-msg dashed">audio_beep() startup tone</span></div>
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">main</span><span class="seq-line">----></span><span class="seq-msg solid">ble_uart_init(on_ble_rx)</span><span style="font-size:0.72rem;color:var(--text2);margin-left:0.5rem;">NimBLE + NUS + Advertise</span></div>
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">main</span><span class="seq-line">----></span><span class="seq-msg solid">odrive_uart_init(odrive_to_ble)</span><span style="font-size:0.72rem;color:var(--text2);margin-left:0.5rem;">UART1 + odrive_rx task (prio=5)</span></div>
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">main</span><span class="seq-line">----></span><span class="seq-msg solid">xTaskCreate(key_scan)</span><span style="font-size:0.72rem;color:var(--text2);margin-left:0.5rem;">2048 stack, prio=3</span></div>
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">main</span><span class="seq-line">----></span><span class="seq-msg solid">LCD_Init() + LCD_BLK_Set()</span><span style="font-size:0.72rem;color:var(--text2);margin-left:0.5rem;">SPI + register sequence</span></div>
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">main</span><span class="seq-line">----></span><span class="seq-msg solid">CST816_Init()</span><span style="font-size:0.72rem;color:var(--text2);margin-left:0.5rem;">I2C + ChipID (5 retries)</span></div>
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">main</span><span class="seq-line">----></span><span class="seq-msg solid">LCD_ShowPicture(idle_rgb565)</span></div>
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">main</span><span class="seq-line">----></span><span class="seq-msg solid">xTaskCreate(odrive_lcd)</span><span style="font-size:0.72rem;color:var(--text2);margin-left:0.5rem;">3072 stack, prio=2</span></div>
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">main</span><span class="seq-line">----></span><span class="seq-msg solid">servo_init() + random motion</span><span style="font-size:0.72rem;color:var(--text2);margin-left:0.5rem;">PWM 50Hz + servo_random task</span></div>
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">main</span><span class="seq-line">----></span><span class="seq-msg solid">RGB565_DualModeInteractive()</span><span style="font-size:0.72rem;color:var(--text2);margin-left:0.5rem;">Touch-driven expression loop</span></div>
+        <div class="seq-row"><span class="seq-actor" style="color:var(--accent2);">main</span><span class="seq-line">- - -></span><span class="seq-msg dashed">while(1) vTaskDelay(1000ms)</span><span style="font-size:0.72rem;color:var(--text2);margin-left:0.5rem;">idle loop</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== BLE-ODrive Bridge ===== -->
+  <div class="card">
+    <h2>Data Flow: BLE ↔ ODrive Bridge</h2>
+    <div class="flow-container">
+      <div style="display:flex;gap:1.5rem;flex-wrap:wrap;justify-content:center;">
+        <!-- Phone -->
+        <div style="border:1px solid var(--green);border-radius:8px;padding:0.8rem;min-width:160px;text-align:center;">
+          <div style="font-weight:700;color:var(--green);margin-bottom:0.5rem;">Phone (BLE Client)</div>
+          <div class="flow-box green" style="font-size:0.72rem;">nRF Toolbox / App</div>
+          <div style="font-size:0.72rem;color:var(--text2);margin-top:0.3rem;">Write to RX Char<br/>Subscribe to TX Notify</div>
+        </div>
+
+        <!-- ESP32 -->
+        <div style="border:1px solid var(--accent);border-radius:8px;padding:0.8rem;min-width:350px;">
+          <div style="font-weight:700;color:var(--accent2);margin-bottom:0.5rem;text-align:center;">ESP32-S3 Middleware</div>
+          <div class="flow-col">
+            <div class="flow-row">
+              <span class="flow-box solid" style="font-size:0.75rem;">BLE RX<br/>(nus_rx_access_cb)</span>
+              <span class="arrow">→</span>
+              <span class="flow-box purple" style="font-size:0.72rem;">on_ble_rx()<br/>+ '\n'</span>
+              <span class="arrow">→</span>
+              <span class="flow-box green" style="font-size:0.72rem;">odrive_uart<br/>_send_cmd()</span>
+            </div>
+            <div style="text-align:center;font-size:0.7rem;color:var(--text2);margin:0.3rem 0;">↓ Phone commands to ODrive</div>
+            <hr class="divider" style="margin:0.4rem 0;">
+            <div style="text-align:center;font-size:0.7rem;color:var(--text2);margin:0.3rem 0;">↑ ODrive telemetry to Phone</div>
+            <div class="flow-row">
+              <span class="flow-box green" style="font-size:0.72rem;">odrive_rx_task<br/>parse $ST</span>
+              <span class="arrow">→</span>
+              <span class="flow-box solid" style="font-size:0.72rem;">s_status<br/>(mutex)</span>
+              <span class="arrow">→</span>
+              <span class="flow-box cyan" style="font-size:0.72rem;">odrive_to_ble()<br/>→ ble_uart_send()</span>
+            </div>
+            <div class="flow-row" style="justify-content:center;margin-top:0.3rem;">
+              <span class="flow-box orange" style="font-size:0.7rem;">LED1-3</span>
+              <span class="flow-box red" style="font-size:0.7rem;">LCD Status Bar<br/>(2Hz refresh)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ODrive -->
+        <div style="border:1px solid var(--red);border-radius:8px;padding:0.8rem;min-width:160px;text-align:center;">
+          <div style="font-weight:700;color:var(--red);margin-bottom:0.5rem;">ODrive Controller</div>
+          <div class="flow-box red" style="font-size:0.72rem;">UART 115200</div>
+          <div style="font-size:0.72rem;color:var(--text2);margin-top:0.3rem;">
+            TX=IO36 (to ESP)<br/>RX=IO37 (from ESP)<br/>$ST status frames<br/>$M0/$M1 commands
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== BLE State Machine ===== -->
+  <div class="card">
+    <h2>BLE Connection State Machine</h2>
+    <div class="flow-container">
+      <div class="flow-col">
+        <div class="state-row">
+          <span class="state-node start">[Start]</span>
+          <span class="state-edge">init →</span>
+          <span class="state-node idle">Advertising<br/><small>"HKR_Robot"</small></span>
+        </div>
+        <div class="state-row">
+          <span class="state-edge" style="font-size:0.75rem;">connect OK →</span>
+          <span class="state-node active">Connected<br/><small>LED4=ON</small></span>
+          <span class="state-edge" style="font-size:0.75rem;">subscribe →</span>
+          <span class="state-node active">Subscribed<br/><small>Bidirectional data</small></span>
+        </div>
+        <div class="state-row">
+          <span class="state-edge" style="font-size:0.75rem;">← disconnect / connect fail</span>
+          <span class="state-node warning">Re-Advertise</span>
+          <span class="state-edge" style="font-size:0.75rem;">→</span>
+          <span class="state-node idle">Advertising</span>
+        </div>
+        <div style="text-align:center;margin-top:0.3rem;">
+          <span class="state-node error" style="font-size:0.72rem;">BLE Reset</span>
+          <span class="state-edge" style="font-size:0.75rem;">→</span>
+          <span class="state-node idle" style="font-size:0.72rem;">Advertising<br/><small>LED4=OFF, conn_handle=NONE</small></span>
+        </div>
+      </div>
+      <div class="state-note">
+        <strong>LED4 State:</strong> OFF while advertising/disconnected, ON when BLE connected. NUS UUID: 6E400001-B5A3-F393-E0A9-E50E24DCCA9E (128-bit).
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ODrive Parser Flow ===== -->
+  <div class="card">
+    <h2>ODrive $ST Frame Parser Flow</h2>
+    <div class="flow-container">
+      <div class="flow-col">
+        <div class="flow-row">
+          <span class="flow-box solid">odrive_rx_task()</span>
+          <span class="arrow">→</span>
+          <span class="flow-box cyan">uart_read_bytes<br/>timeout=100ms</span>
+        </div>
+        <div style="font-size:0.72rem;color:var(--text2);margin:0.2rem 0;text-align:center;">↓</div>
+        <div class="flow-row">
+          <span class="flow-box yellow">len ≤ 0 ?</span>
+          <span class="arrow">→ <small>timeout > 1s</small></span>
+          <span class="flow-box red" style="font-size:0.72rem;">led_set(1, false)<br/><small>LED1 = comm lost</small></span>
+        </div>
+        <div class="flow-row">
+          <span class="flow-box yellow">len > 0</span>
+          <span class="arrow">→</span>
+          <span class="flow-box solid" style="font-size:0.72rem;">for each byte:<br/>line_buf[line_pos++]</span>
+          <span class="arrow">→</span>
+          <span class="flow-box yellow">c=='\n'?</span>
+        </div>
+        <div style="font-size:0.72rem;color:var(--text2);margin:0.2rem 0;text-align:center;">↓ Yes (line complete)</div>
+        <div class="flow-row">
+          <span class="flow-box cyan">s_ble_cb<br/>(line + '\n')</span>
+          <span class="arrow">→</span>
+          <span class="flow-box solid">→ Phone via<br/>ble_uart_send()</span>
+        </div>
+        <div class="flow-row">
+          <span class="flow-box yellow">line starts<br/>"$ST,"?</span>
+          <span class="arrow">→ <small>Yes</small></span>
+          <span class="flow-box green">parse_st_frame()<br/><small>14 comma fields<br/>strtok + strtof/strtol</small></span>
+        </div>
+        <div style="font-size:0.72rem;color:var(--text2);margin:0.2rem 0;text-align:center;">↓ Success</div>
+        <div class="flow-row">
+          <span class="flow-box orange">Mutex take</span>
+          <span class="arrow">→</span>
+          <span class="flow-box purple">s_status = tmp<br/>+ timestamp + valid=true</span>
+          <span class="arrow">→</span>
+          <span class="flow-box orange">Mutex give</span>
+          <span class="arrow">→</span>
+          <span class="flow-box solid">update_status_leds()<br/><small>LED1=comm, LED2=M0en, LED3=M1en</small></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Touch Expression State Machine ===== -->
+  <div class="card">
+    <h2>Touch Interactive Expression State Machine</h2>
+    <div class="flow-container">
+      <div style="display:flex;gap:1.5rem;flex-wrap:wrap;justify-content:center;">
+        <!-- Robot Mode -->
+        <div style="border:1px solid var(--purple);border-radius:8px;padding:0.8rem;min-width:280px;">
+          <div style="font-weight:700;color:var(--purple);margin-bottom:0.5rem;text-align:center;">Robot Mode</div>
+          <div class="flow-col">
+            <div class="state-row">
+              <span class="state-node idle">Idle</span>
+              <span class="state-edge">swipe ↑ →</span>
+              <span class="state-node active">HaQi</span>
+            </div>
+            <div class="state-row">
+              <span class="state-node idle">Idle</span>
+              <span class="state-edge">swipe ↓ →</span>
+              <span class="state-node warning">CloseEye</span>
+            </div>
+            <div class="state-row">
+              <span class="state-node idle">Idle</span>
+              <span class="state-edge">touch →</span>
+              <span class="state-node active">Smile</span>
+            </div>
+            <div class="state-row">
+              <span class="state-node idle">Idle</span>
+              <span class="state-edge">touch →</span>
+              <span class="state-node error">Angry</span>
+            </div>
+            <div style="text-align:center;margin-top:0.4rem;">
+              <span class="state-edge" style="font-size:0.72rem;">All expressions return to Idle on: swipe ← or timeout 3s</span>
+            </div>
+            <div style="font-size:0.72rem;color:var(--text2);margin-top:0.3rem;text-align:center;">
+              Images: idle(284x155) haQi(284x157) closeeye(284x156) smile(284x156) angry(284x154)
+            </div>
+          </div>
+        </div>
+
+        <!-- Mode Switch -->
+        <div style="display:flex;align-items:center;flex-direction:column;justify-content:center;">
+          <span class="state-edge" style="font-size:0.78rem;">swipe →<br/>(mode switch)</span>
+          <div style="margin:0.3rem 0;font-size:1.5rem;color:var(--text2);">⇄</div>
+          <span class="state-edge" style="font-size:0.78rem;">swipe ←<br/>(mode switch back)</span>
+        </div>
+
+        <!-- YNF Mode -->
+        <div style="border:1px solid var(--cyan);border-radius:8px;padding:0.8rem;min-width:280px;">
+          <div style="font-weight:700;color:var(--cyan);margin-bottom:0.5rem;text-align:center;">YNF Mode</div>
+          <div class="flow-col">
+            <div class="state-row">
+              <span class="state-node active">YNF Idle</span>
+              <span class="state-edge">swipe ↑ →</span>
+              <span class="state-node warning">YNF HaQi</span>
+            </div>
+            <div class="state-row">
+              <span class="state-node active">YNF Idle</span>
+              <span class="state-edge">touch →</span>
+              <span class="state-node error">YNF Angry</span>
+            </div>
+            <div style="text-align:center;margin-top:0.4rem;">
+              <span class="state-edge" style="font-size:0.72rem;">All expressions return to YNF Idle on: swipe ← or timeout 3s</span>
+            </div>
+            <div style="font-size:0.72rem;color:var(--text2);margin-top:0.3rem;text-align:center;">
+              Images: ynfidle(284x156) ynfhaQi(284x156) ynfangry(284x156)
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="state-note">
+        <strong>Gesture Mapping (CST816):</strong> UPGLIDE=0x02 (haQi), DOWNGLIDE=0x01 (closeeye), LEFTGLIDE=0x03 (return to idle), RIGHTGLIDE=0x04 (mode switch), CLICK=0x05 (smile/angry toggle). MotionMask initialized to M_ALLENABLE (0x07).
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Servo Control ===== -->
+  <div class="card">
+    <h2>Servo Control Architecture</h2>
+    <div class="flow-container">
+      <div class="flow-col">
+        <div class="flow-row">
+          <span class="flow-box solid">servo_init()</span>
+          <span class="arrow">→</span>
+          <span class="flow-box cyan">ledc_timer_config<br/>50Hz, 14-bit</span>
+          <span class="arrow">→</span>
+          <span class="flow-box cyan">ledc_channel_config<br/>GPIO41, duty=90°</span>
+          <span class="arrow">→</span>
+          <span class="flow-box green">Ready<br/><small>current_angle=90°</small></span>
+        </div>
+
+        <hr class="divider">
+
+        <div style="font-weight:600;font-size:0.85rem;color:var(--accent2);text-align:center;margin:0.4rem 0;">servo_set_angle(θ) — Immediate</div>
+        <div class="flow-row" style="justify-content:center;">
+          <span class="flow-box solid">Clamp θ<br/>[0, 180]</span>
+          <span class="arrow">→</span>
+          <span class="flow-box orange">angle_to_duty()<br/><small>pulse = 500 + θ/180*2000 µs<br/>duty = pulse/20000 * 16383</small></span>
+          <span class="arrow">→</span>
+          <span class="flow-box solid">ledc_set_duty()<br/>+ update</span>
+        </div>
+
+        <hr class="divider">
+
+        <div style="font-weight:600;font-size:0.85rem;color:var(--accent2);text-align:center;margin:0.4rem 0;">servo_move_smooth(θ, t_ms) — S-Curve</div>
+        <div class="flow-row" style="justify-content:center;">
+          <span class="flow-box solid">|Δθ|<0.5°?<br/>→ direct set</span>
+          <span class="arrow">→</span>
+          <span class="flow-box purple">steps = t_ms/20ms<br/>for i=0..steps:</span>
+          <span class="arrow">→</span>
+          <span class="flow-box purple">cubic_spline(t)<br/><small>t = i/steps<br/>3t² - 2t³ (S-curve)</small></span>
+          <span class="arrow">→</span>
+          <span class="flow-box solid">angle = start<br/>+ diff * interp</span>
+          <span class="arrow">→</span>
+          <span class="flow-box solid">servo_set_angle()</span>
+        </div>
+
+        <hr class="divider">
+
+        <div style="font-weight:600;font-size:0.85rem;color:var(--accent2);text-align:center;margin:0.4rem 0;">servo_random_motion_task — Background Loop</div>
+        <div class="flow-col">
+          <div class="flow-row" style="justify-content:center;">
+            <span class="flow-box orange">Random target<br/>30°-150°</span>
+            <span class="arrow">→</span>
+            <span class="flow-box orange">Random duration<br/>1000-2500ms</span>
+            <span class="arrow">→</span>
+            <span class="flow-box solid">servo_move_smooth()</span>
+            <span class="arrow">→</span>
+            <span class="flow-box orange">Random pause<br/>500-2000ms</span>
+            <span class="arrow">→</span>
+            <span class="flow-box solid">vTaskDelay(pause)</span>
+            <span class="arrow">→</span>
+            <span class="flow-box orange" style="font-size:0.7rem;">Loop forever</span>
+          </div>
+        </div>
+      </div>
+      <div class="state-note">
+        <strong>Cubic Spline Formula:</strong> f(t) = 3t² - 2t³ where t ∈ [0,1]. This S-curve provides zero velocity at start/end points with smooth acceleration in between. The task runs at priority 1 (lowest) to avoid preempting UI and communication tasks.
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Audio Subsystem ===== -->
+  <div class="card">
+    <h2>Audio Subsystem Architecture</h2>
+    <div class="flow-container">
+      <div style="display:flex;gap:1.5rem;flex-wrap:wrap;justify-content:center;">
+        <!-- Input Path -->
+        <div style="border:1px solid var(--green);border-radius:8px;padding:0.8rem;min-width:250px;">
+          <div style="font-weight:700;color:var(--green);margin-bottom:0.5rem;">Input Path (Capture)</div>
+          <div class="flow-col">
+            <div class="flow-box green">Microphone</div>
+            <div class="arrow-down">↓ analog</div>
+            <div class="flow-box solid">ES8388 ADC<br/><small>LIN1/RIN1 diff<br/>PGA +24dB<br/>MICBIAS enabled</small></div>
+            <div class="arrow-down">↓ I2S RX<br/><small>BCK=IO4, WS=IO5<br/>DATA=IO6, 16kHz</small></div>
+            <div class="flow-box cyan">sst_capture_task()<br/><small>Read 256 samples<br/>RMS calculation<br/>VOICE_DETECTED > 500</small></div>
+            <div class="arrow-down">↓</div>
+            <div class="flow-box purple">AudioProcessor<br/>(stub → callback)</div>
+            <div class="arrow-down">↓ (stub)</div>
+            <div class="flow-box gray">Google STT API<br/><small>(not implemented)</small></div>
+          </div>
+        </div>
+
+        <!-- Output Path -->
+        <div style="border:1px solid var(--red);border-radius:8px;padding:0.8rem;min-width:250px;">
+          <div style="font-weight:700;color:var(--red);margin-bottom:0.5rem;">Output Path (Playback)</div>
+          <div class="flow-col">
+            <div class="flow-box red">tts_play_sine()<br/><small>sin wave 440Hz/880Hz<br/>16000Hz sample rate<br/>chunk=256 samples</small></div>
+            <div class="arrow-down">↓ g_codec->Write()<br/><small>int16_t PCM</small></div>
+            <div class="flow-box solid">I2S TX<br/><small>DATA=IO7, 16-bit</small></div>
+            <div class="arrow-down">↓</div>
+            <div class="flow-box solid">ES8388 DAC<br/><small>Stereo, 0dB<br/>LOUT1/ROUT1 enabled</small></div>
+            <div class="arrow-down">↓</div>
+            <div class="flow-box orange">NS4150 PA<br/><small>PA_EN=IO41<br/>gpio_set_level(41, 1)</small></div>
+            <div class="arrow-down">↓</div>
+            <div class="flow-box green">Speaker</div>
+          </div>
+          <div style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border);">
+            <div class="flow-box yellow" style="font-size:0.72rem;">Aux: audio_beep()<br/>PWM GPIO42, 1kHz 100ms<br/>NS4150 only (no ES8388)</div>
+          </div>
+        </div>
+
+        <!-- Config -->
+        <div style="border:1px solid var(--accent);border-radius:8px;padding:0.8rem;min-width:200px;">
+          <div style="font-weight:700;color:var(--accent2);margin-bottom:0.5rem;">ES8388 Config</div>
+          <div class="flow-col">
+            <div class="flow-box solid">I2C @ 0x10<br/><small>SDA=IO1, SCL=IO2</small></div>
+            <div class="arrow-down">↓</div>
+            <div class="flow-box cyan" style="font-size:0.72rem;">Reset → Power up →<br/>ADC config → DAC config →<br/>Output enable</div>
+          </div>
+          <div style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border);">
+            <div class="flow-box gray" style="font-size:0.72rem;">XL9555 IO Expander<br/>@ 0x20 (reserved)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Key Press Handler ===== -->
+  <div class="card">
+    <h2>Key Press Handler Flow</h2>
+    <div class="flow-container">
+      <div class="flow-col">
+        <div class="flow-row">
+          <span class="flow-box solid">key_scan_task()<br/><small>50ms cycle, prio=3</small></span>
+          <span class="arrow">→</span>
+          <span class="flow-box cyan">for i=1..4<br/>cur = key_get(i)</span>
+          <span class="arrow">→</span>
+          <span class="flow-box yellow">cur && !prev[i-1]?<br/><small>rising edge</small></span>
+        </div>
+        <div class="flow-row" style="justify-content:center;margin-top:0.5rem;">
+          <div style="border:1px solid var(--red);border-radius:6px;padding:0.5rem;margin:0.2rem;text-align:center;">
+            <div style="font-weight:600;color:var(--red);">KEY1 (IO38)</div>
+            <div style="font-size:0.72rem;">$M0,H,0;<br/>M0 Emergency Stop</div>
+          </div>
+          <div style="border:1px solid var(--red);border-radius:6px;padding:0.5rem;margin:0.2rem;text-align:center;">
+            <div style="font-weight:600;color:var(--red);">KEY2 (IO45)</div>
+            <div style="font-size:0.72rem;">$M1,H,0;<br/>M1 Emergency Stop</div>
+          </div>
+          <div style="border:1px solid var(--yellow);border-radius:6px;padding:0.5rem;margin:0.2rem;text-align:center;">
+            <div style="font-weight:600;color:var(--yellow);">KEY3 (IO46)</div>
+            <div style="font-size:0.72rem;">$M0,E,0; + $M1,E,0;<br/>Clear Errors</div>
+          </div>
+          <div style="border:1px solid var(--accent);border-radius:6px;padding:0.5rem;margin:0.2rem;text-align:center;">
+            <div style="font-weight:600;color:var(--accent);">KEY4 (IO3)</div>
+            <div style="font-size:0.72rem;">audio_beep()<br/>1kHz, 100ms</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Dify Chat ===== -->
+  <div class="card">
+    <h2>Dify Chat Cloud Integration</h2>
+    <div class="flow-container">
+      <div class="flow-col">
+        <div class="flow-row">
+          <span class="flow-box solid">init_dify_chat()</span>
+          <span class="arrow">→</span>
+          <span class="flow-box orange">force_mbedtls<br/>_use_psram()</span>
+          <span class="arrow">→</span>
+          <span class="flow-box cyan">connect_to_wifi()</span>
+        </div>
+        <div style="font-size:0.75rem;color:var(--text2);margin:0.3rem 0;text-align:center;">
+          NVS init → Netif → WiFi STA (SSID/PASS) → Wait IP (30s timeout) → SNTP sync (pool.ntp.org, 10 retries)
+        </div>
+        <div class="flow-row">
+          <span class="flow-box solid">dify_chat_loop()</span>
+          <span class="arrow">→</span>
+          <span class="flow-box purple">xQueueCreate<br/>(8, char*)</span>
+          <span class="arrow">→</span>
+          <span class="flow-box solid">dify_chat_task<br/><small>stdin reader</small></span>
+          <span class="arrow">+</span>
+          <span class="flow-box solid">http_worker_task<br/><small>HTTP POST worker</small></span>
+        </div>
+        <hr class="divider">
+        <div class="flow-row">
+          <span class="flow-box green">stdin → fgets()</span>
+          <span class="arrow">→</span>
+          <span class="flow-box cyan">xQueueSend()</span>
+          <span class="arrow">→</span>
+          <span class="flow-box orange">xQueueReceive()</span>
+          <span class="arrow">→</span>
+          <span class="flow-box red">send_chat_to_dify()</span>
+        </div>
+        <div style="font-size:0.75rem;color:var(--text2);margin:0.3rem 0;text-align:center;">
+          Check WiFi → cJSON build {query, user, response_mode:"blocking", conversation_id} →<br/>
+          HTTP POST api.dify.ai/v1/chat-messages (Bearer token) → Parse answer + update conversation_id
+        </div>
+        <div class="state-note">
+          <strong>Status:</strong> Currently <strong>disabled</strong> in app_main (commented out). The code is complete and functional but replaced by the dual-mode expression engine for current operation.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== LCD Demo State Machine ===== -->
+  <div class="card">
+    <h2>LCD Demo State Machine (lcd_demo.c)</h2>
+    <div class="flow-container">
+      <div class="flow-col">
+        <div class="state-row">
+          <span class="state-node start">STATE_LOGO</span>
+          <span class="state-edge">3s →</span>
+          <span class="state-node idle">STATE_TEXT</span>
+          <span class="state-edge">2s →</span>
+          <span class="state-node active">STATE_IMAGE</span>
+          <span class="state-edge">2s →</span>
+          <span class="state-node warning">STATE_COLOR_FULL</span>
+        </div>
+        <div class="state-row" style="margin-top:0.3rem;">
+          <span class="state-node warning">STATE_COLOR_FULL</span>
+          <span class="state-edge">1s →</span>
+          <span class="state-node purple">STATE_COLOR_BAR</span>
+          <span class="state-edge">3s →</span>
+          <span class="state-node active">STATE_GRAYSCALE</span>
+          <span class="state-edge">3s →</span>
+          <span class="state-node error">STATE_COUNTDOWN</span>
+        </div>
+        <div class="state-row" style="margin-top:0.3rem;">
+          <span class="state-node error">STATE_COUNTDOWN</span>
+          <span class="state-edge">→</span>
+          <span class="state-node idle">STATE_HANDWRITING</span>
+          <span class="state-edge">→ on touch</span>
+          <span class="state-node start">STATE_LOGO</span>
+          <span style="font-size:0.75rem;color:var(--text2);margin-left:0.5rem;">(loop back)</span>
+        </div>
+      </div>
+      <div class="state-note">
+        <strong>Note:</strong> This demo state machine is defined in lcd_demo.c but is <strong>not</strong> used in the current app_main flow. The main application uses RGB565_DualModeInteractive() for touch-based expression switching instead.
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Cross-File Call Graph ===== -->
+  <div class="card">
+    <h2>Cross-File Function Call Graph</h2>
+    <div class="flow-container" style="font-size:0.78rem;">
+      <table>
+        <thead><tr><th>Caller</th><th>→</th><th>Callee</th><th>Module</th></tr></thead>
+        <tbody>
+          <tr><td class="fn">app_main()</td><td class="mono">→</td><td class="fn">peripheral_ctrl_init()</td><td class="file">main.c → peripheral_ctrl.c</td></tr>
+          <tr><td class="fn">app_main()</td><td class="mono">→</td><td class="fn">ble_uart_init(on_ble_rx)</td><td class="file">main.c → ble_uart.c</td></tr>
+          <tr><td class="fn">app_main()</td><td class="mono">→</td><td class="fn">odrive_uart_init(odrive_to_ble)</td><td class="file">main.c → odrive_uart.c</td></tr>
+          <tr><td class="fn">app_main()</td><td class="mono">→</td><td class="fn">xTaskCreate(key_scan_task)</td><td class="file">main.c (internal)</td></tr>
+          <tr><td class="fn">app_main()</td><td class="mono">→</td><td class="fn">LCD_Init() / LCD_BLK_Set()</td><td class="file">main.c → lcd_init.c</td></tr>
+          <tr><td class="fn">app_main()</td><td class="mono">→</td><td class="fn">CST816_Init()</td><td class="file">main.c → cst816.c</td></tr>
+          <tr><td class="fn">app_main()</td><td class="mono">→</td><td class="fn">servo_init() / servo_start_random_motion()</td><td class="file">main.c → servo_control.c</td></tr>
+          <tr><td class="fn">app_main()</td><td class="mono">→</td><td class="fn">RGB565_DualModeInteractive()</td><td class="file">main.c → lcd.c</td></tr>
+          <tr><td class="fn">on_ble_rx()</td><td class="mono">→</td><td class="fn">odrive_uart_send_cmd()</td><td class="file">main.c → odrive_uart.c</td></tr>
+          <tr><td class="fn">odrive_to_ble()</td><td class="mono">→</td><td class="fn">ble_uart_send()</td><td class="file">main.c → ble_uart.c</td></tr>
+          <tr><td class="fn">key_scan_task()</td><td class="mono">→</td><td class="fn">key_get() / audio_beep() / odrive_uart_send_cmd()</td><td class="file">main.c → peripheral_ctrl.c / odrive_uart.c</td></tr>
+          <tr><td class="fn">odrive_lcd_task()</td><td class="mono">→</td><td class="fn">odrive_uart_lcd_update()</td><td class="file">main.c → odrive_uart.c</td></tr>
+          <tr><td class="fn">odrive_uart_lcd_update()</td><td class="mono">→</td><td class="fn">odrive_uart_get_status() / LCD_Fill() / LCD_ShowString()</td><td class="file">odrive_uart.c → odrive_uart.c / lcd.c</td></tr>
+          <tr><td class="fn">odrive_rx_task()</td><td class="mono">→</td><td class="fn">parse_st_frame() / update_status_leds() / s_ble_cb()</td><td class="file">odrive_uart.c (internal)</td></tr>
+          <tr><td class="fn">update_status_leds()</td><td class="mono">→</td><td class="fn">led_set()</td><td class="file">odrive_uart.c → peripheral_ctrl.c</td></tr>
+          <tr><td class="fn">servo_move_smooth()</td><td class="mono">→</td><td class="fn">cubic_spline_interpolation() / servo_set_angle()</td><td class="file">servo_control.c (internal)</td></tr>
+          <tr><td class="fn">servo_set_angle()</td><td class="mono">→</td><td class="fn">angle_to_duty() / ledc_set_duty()</td><td class="file">servo_control.c (internal)</td></tr>
+          <tr><td class="fn">audio_beep()</td><td class="mono">→</td><td class="fn">audio_play_tone(1000, 100)</td><td class="file">peripheral_ctrl.c (internal)</td></tr>
+          <tr><td class="fn">start_tts_sst_demo()</td><td class="mono">→</td><td class="fn">Es8388AudioCodec::Init() / AudioProcessor::Initialize()</td><td class="file">tts_sst_demo.cpp → es8388_audio_codec.cpp</td></tr>
+          <tr><td class="fn">sst_capture_task()</td><td class="mono">→</td><td class="fn">Es8388AudioCodec::Read() / AudioProcessor::Input()</td><td class="file">tts_sst_demo.cpp (internal)</td></tr>
+          <tr><td class="fn">tts_play_sine()</td><td class="mono">→</td><td class="fn">Es8388AudioCodec::Write()</td><td class="file">tts_sst_demo.cpp → es8388_audio_codec.cpp</td></tr>
+          <tr><td class="fn">send_chat_to_dify()</td><td class="mono">→</td><td class="fn">esp_http_client_perform() / cJSON_Parse()</td><td class="file">dify_chat.c → ESP-IDF / cJSON</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- TAB 6: Partition & Memory -->
+<!-- ============================================================ -->
+<div id="tab-partition" class="tab-panel">
+
+  <div class="card">
+    <h2>Flash Partition Table (partitions.csv)</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Type</th><th>SubType</th><th>Offset</th><th>Size</th><th>End Address</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="fn">nvs</td>
+          <td class="mono">data</td><td class="mono">nvs</td>
+          <td class="mono">0x9000</td>
+          <td class="mono">0x6000 (24 KB)</td>
+          <td class="mono">0xF000</td>
+          <td class="desc">Non-Volatile Storage: WiFi credentials, BLE bonding, runtime settings</td>
+        </tr>
+        <tr>
+          <td class="fn">phy_init</td>
+          <td class="mono">data</td><td class="mono">phy</td>
+          <td class="mono">0xF000</td>
+          <td class="mono">0x1000 (4 KB)</td>
+          <td class="mono">0x10000</td>
+          <td class="desc">PHY calibration data (WiFi/BT RF parameters)</td>
+        </tr>
+        <tr>
+          <td class="fn">factory</td>
+          <td class="mono">app</td><td class="mono">factory</td>
+          <td class="mono">0x10000</td>
+          <td class="mono">0x300000 (3 MB)</td>
+          <td class="mono">0x310000</td>
+          <td class="desc">Application firmware (ESP-IDF app binary)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Flash Layout Visualization</h2>
+    <p style="margin-bottom:1rem;">Assuming 8MB Flash (typical ESP32-S3 module). Used: ~3.06MB for partitions + bootloader.</p>
+
+    <div class="partition-bar" style="width:100%;">
+      <div class="part" style="width:1.1%; background:var(--text2);" title="Bootloader (0x0000-0x9000, ~36KB)">BL</div>
+      <div class="part" style="width:0.7%; background:var(--orange);" title="NVS (0x9000-0xF000, 24KB)">NVS</div>
+      <div class="part" style="width:0.12%; background:var(--yellow);" title="PHY (0xF000-0x10000, 4KB)">PHY</div>
+      <div class="part" style="width:36.6%; background:var(--accent);" title="Factory App (0x10000-0x310000, 3MB)">Factory Application (3 MB)</div>
+      <div class="part" style="width:61.5%; background:var(--surface2); color:var(--text2); border:1px dashed var(--border);" title="Unused (0x310000-0x800000, ~4.94MB)">Unused Flash (~5 MB)</div>
+    </div>
+
+    <div class="partition-legend">
+      <span><span class="badge" style="background:var(--text2);">Bootloader</span> 0x0000 - 0x9000 (~36KB)</span>
+      <span><span class="badge" style="background:var(--orange);">NVS</span> 0x9000 - 0xF000 (24KB)</span>
+      <span><span class="badge" style="background:var(--yellow);">PHY Init</span> 0xF000 - 0x10000 (4KB)</span>
+      <span><span class="badge" style="background:var(--accent);">Factory App</span> 0x10000 - 0x310000 (3MB)</span>
+      <span><span class="badge" style="background:var(--surface2); color:var(--text2); border:1px solid var(--border);">Unused</span> 0x310000 - End (~5MB)</span>
+    </div>
+
+    <table style="margin-top:1rem;">
+      <thead><tr><th>Segment</th><th>Start</th><th>End</th><th>Size</th><th>Usage %</th></tr></thead>
+      <tbody>
+        <tr><td class="fn">Bootloader</td><td class="mono">0x00000</td><td class="mono">0x08FFF</td><td class="mono">36 KB</td><td>0.44%</td></tr>
+        <tr><td class="fn">NVS</td><td class="mono">0x09000</td><td class="mono">0x0EFFF</td><td class="mono">24 KB</td><td>0.29%</td></tr>
+        <tr><td class="fn">PHY Init</td><td class="mono">0x0F000</td><td class="mono">0x0FFFF</td><td class="mono">4 KB</td><td>0.05%</td></tr>
+        <tr><td class="fn">Factory App</td><td class="mono">0x10000</td><td class="mono">0x30FFFF</td><td class="mono">3 MB</td><td>36.6%</td></tr>
+        <tr style="opacity:0.5;"><td class="fn">Unused</td><td class="mono">0x310000</td><td class="mono">0x7FFFFF</td><td class="mono">~4.94 MB</td><td>~60.3%</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Memory Map Notes</h2>
+    <div class="grid">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem;">
+        <h3 style="color:var(--accent2);margin:0 0 0.5rem;">Flash</h3>
+        <ul style="list-style:none;font-size:0.85rem;">
+          <li style="padding:0.2rem 0;">Total: 8 MB (typical ESP32-S3-WROOM)</li>
+          <li style="padding:0.2rem 0;">Used by partitions: ~3.06 MB</li>
+          <li style="padding:0.2rem 0;">Available for OTA/SPIFFS: ~5 MB</li>
+          <li style="padding:0.2rem 0;">Embedded JPEG images in app binary</li>
+          <li style="padding:0.2rem 0;">RGB565 arrays compiled into firmware</li>
+        </ul>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem;">
+        <h3 style="color:var(--green);margin:0 0 0.5rem;">PSRAM (SPIRAM)</h3>
+        <ul style="list-style:none;font-size:0.85rem;">
+          <li style="padding:0.2rem 0;">Used by Dify module for TLS (mbedTLS)</li>
+          <li style="padding:0.2rem 0;">force_mbedtls_use_psram() redirects alloc</li>
+          <li style="padding:0.2rem 0;">96KB warm-up allocation at Dify init</li>
+          <li style="padding:0.2rem 0;">LCD SPI max_transfer_sz = full screen (136KB)</li>
+        </ul>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem;">
+        <h3 style="color:var(--orange);margin:0 0 0.5rem;">RTOS Heap Usage</h3>
+        <ul style="list-style:none;font-size:0.85rem;">
+          <li style="padding:0.2rem 0;">odrive_rx: 4096 stack (UART RX loop)</li>
+          <li style="padding:0.2rem 0;">dify_worker: 8192 stack (HTTP + TLS)</li>
+          <li style="padding:0.2rem 0;">servo_random: 4096 stack (smooth motion)</li>
+          <li style="padding:0.2rem 0;">sst_capture: 4096 stack (audio processing)</li>
+          <li style="padding:0.2rem 0;">LCD Fill: malloc(512) per fill call</li>
+          <li style="padding:0.2rem 0;">Dify HTTP: 4KB response buffer (static)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>RGB565 Image Asset Sizes</h2>
+    <table>
+      <thead><tr><th>Asset File</th><th>Width x Height</th><th>Pixels</th><th>Array Size</th><th>Memory (bytes)</th></tr></thead>
+      <tbody>
+        <tr><td class="fn">idle_rgb565.h</td><td class="mono">284 x 155</td><td class="mono">44,020</td><td class="mono">idle_rgb565[44020]</td><td class="mono">88,040</td></tr>
+        <tr><td class="fn">haqi_rgb565.h</td><td class="mono">284 x 157</td><td class="mono">44,588</td><td class="mono">haqi_rgb565[44588]</td><td class="mono">89,176</td></tr>
+        <tr><td class="fn">angry_rgb565.h</td><td class="mono">284 x 154</td><td class="mono">43,736</td><td class="mono">angry_rgb565[43736]</td><td class="mono">87,472</td></tr>
+        <tr><td class="fn">closeeye_rgb565.h</td><td class="mono">284 x 156</td><td class="mono">44,304</td><td class="mono">closeeye_rgb565[44304]</td><td class="mono">88,608</td></tr>
+        <tr><td class="fn">smile_rgb565.h</td><td class="mono">284 x 156</td><td class="mono">44,304</td><td class="mono">smile_rgb565[44304]</td><td class="mono">88,608</td></tr>
+        <tr><td class="fn">ynfidle_rgb565.h</td><td class="mono">284 x 156</td><td class="mono">44,304</td><td class="mono">ynfidle_rgb565[44304]</td><td class="mono">88,608</td></tr>
+        <tr><td class="fn">ynfhaqi_rgb565.h</td><td class="mono">284 x 156</td><td class="mono">44,304</td><td class="mono">ynfhaqi_rgb565[44304]</td><td class="mono">88,608</td></tr>
+        <tr><td class="fn">ynfangry_rgb565.h</td><td class="mono">284 x 156</td><td class="mono">44,304</td><td class="mono">ynfangry_rgb565[44304]</td><td class="mono">88,608</td></tr>
+        <tr style="font-weight:700;background:rgba(88,166,255,0.08);"><td class="fn">Total (8 images)</td><td class="mono">--</td><td class="mono">353,864</td><td class="mono">--</td><td class="mono" style="color:var(--accent2);">~691 KB</td></tr>
+      </tbody>
+    </table>
+    <div class="state-note">
+      <strong>Note:</strong> All 8 RGB565 images total ~691KB which fits within the 3MB factory partition. Additional embedded JPEGs (angry.jpg, haqi.jpg, idle.jpg) are linked via EMBED_FILES in CMakeLists.txt for the JPEG decoder module.
+    </div>
+  </div>
+</div>
+
+</main>
+
+<footer>
+  ESP32-S3 HKR Robot Middleware &mdash; Architecture Report &mdash; Generated with Claude Code &middot; 2026-05-13
+</footer>
+
+<script>
+document.querySelectorAll('nav.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav.tabs button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+</script>
+</body>
+</html>

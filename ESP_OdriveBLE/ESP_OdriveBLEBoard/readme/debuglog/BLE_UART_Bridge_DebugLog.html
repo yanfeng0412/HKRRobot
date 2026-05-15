@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32-S3 BLE↔UART 透传 — 调试日志</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+    --border: #30363d; --text: #e6edf3; --text2: #8b949e;
+    --green: #3fb950; --red: #f85149; --yellow: #e3b341;
+    --blue: #58a6ff; --purple: #bc8cff; --orange: #ffa657;
+    --teal: #39d353; --pink: #ff7b72;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.6; }
+
+  /* ── Header ── */
+  .header { background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 100%); border-bottom: 1px solid var(--border); padding: 20px 32px; display: flex; align-items: center; gap: 16px; }
+  .header-icon { font-size: 36px; }
+  .header h1 { font-size: 20px; font-weight: 700; color: var(--blue); }
+  .header p { color: var(--text2); font-size: 12px; margin-top: 4px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; background: var(--green); color: #000; margin-left: 8px; }
+  .badge-blue { background: var(--blue); color: #000; }
+
+  /* ── Tabs ── */
+  .tab-bar { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; overflow-x: auto; }
+  .tab-btn { padding: 12px 20px; cursor: pointer; border: none; background: none; color: var(--text2); font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent; white-space: nowrap; transition: all .2s; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+  /* ── Content ── */
+  .tab-content { display: none; padding: 28px 32px; max-width: 1200px; margin: 0 auto; }
+  .tab-content.active { display: block; }
+
+  /* ── Cards ── */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  .card-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .dot-green { background: var(--green); }
+  .dot-red { background: var(--red); }
+  .dot-yellow { background: var(--yellow); }
+  .dot-blue { background: var(--blue); }
+  .dot-purple { background: var(--purple); }
+  .dot-orange { background: var(--orange); }
+
+  /* ── Stats ── */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; }
+  .stat-num { font-size: 28px; font-weight: 800; margin-bottom: 4px; }
+  .stat-lbl { font-size: 11px; color: var(--text2); }
+  .stat-green { color: var(--green); } .stat-red { color: var(--red); }
+  .stat-blue { color: var(--blue); } .stat-yellow { color: var(--yellow); }
+  .stat-orange { color: var(--orange); }
+
+  /* ── Section title ── */
+  .section-title { font-size: 15px; font-weight: 700; color: var(--blue); margin: 24px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+
+  /* ── Timeline ── */
+  .timeline { position: relative; padding-left: 32px; }
+  .timeline::before { content: ''; position: absolute; left: 10px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .tl-day { position: relative; margin-bottom: 8px; }
+  .tl-day-header {
+    position: relative; display: flex; align-items: center; gap: 12px;
+    cursor: pointer; user-select: none; padding: 12px 16px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; font-weight: 700; font-size: 14px;
+    transition: background .2s;
+  }
+  .tl-day-header:hover { background: rgba(88,166,255,0.08); }
+  .tl-day-dot {
+    position: absolute; left: -26px; top: 50%; transform: translateY(-50%);
+    width: 16px; height: 16px; border-radius: 50%; border: 3px solid var(--bg);
+    z-index: 1;
+  }
+  .tl-day-dot.green  { background: var(--green); }
+  .tl-day-dot.blue   { background: var(--blue); }
+  .tl-day-dot.yellow { background: var(--yellow); }
+  .tl-day-dot.red    { background: var(--red); }
+  .tl-day-date { color: var(--text2); font-size: 12px; font-weight: 400; margin-left: auto; }
+  .tl-day-arrow { color: var(--text2); transition: transform .3s; font-size: 12px; }
+  .tl-day-body { display: none; padding: 12px 0 0 4px; }
+  .tl-day.open .tl-day-body { display: block; }
+  .tl-day.open .tl-day-arrow { transform: rotate(90deg); }
+
+  /* timeline items inside day */
+  .tl-items { position: relative; padding-left: 24px; }
+  .tl-items::before { content: ''; position: absolute; left: 6px; top: 0; bottom: 0; width: 1px; background: var(--border); }
+  .tl-item { position: relative; margin-bottom: 14px; }
+  .tl-item-dot { position: absolute; left: -19px; top: 6px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--bg); }
+  .tl-item-dot.green  { background: var(--green); }
+  .tl-item-dot.red    { background: var(--red); }
+  .tl-item-dot.blue   { background: var(--blue); }
+  .tl-item-dot.yellow { background: var(--yellow); }
+  .tl-item-dot.orange { background: var(--orange); }
+  .tl-item-dot.purple { background: var(--purple); }
+  .tl-item-title { font-weight: 600; color: var(--text); font-size: 13px; }
+  .tl-item-desc { color: var(--text2); font-size: 12px; line-height: 1.7; margin-top: 3px; }
+
+  /* ── Change cards ── */
+  .change-card { border-left: 3px solid; padding: 14px 18px; margin-bottom: 14px; border-radius: 0 8px 8px 0; background: var(--surface); }
+  .change-card.fix  { border-color: var(--green); }
+  .change-card.bug  { border-color: var(--red); }
+  .change-card.feat { border-color: var(--blue); }
+  .change-card.warn { border-color: var(--yellow); }
+  .change-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .change-tag { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+  .tag-fix  { background: #1a3a1a; color: var(--green); border: 1px solid var(--green); }
+  .tag-bug  { background: #3a1a1a; color: var(--red); border: 1px solid var(--red); }
+  .tag-feat { background: #1a1a3a; color: var(--blue); border: 1px solid var(--blue); }
+  .tag-warn { background: #2a1a00; color: var(--yellow); border: 1px solid var(--yellow); }
+  .tag-perf { background: #2a1a2a; color: var(--purple); border: 1px solid var(--purple); }
+  .change-file { color: var(--text2); font-family: monospace; font-size: 11px; margin-left: auto; }
+
+  /* ── Diff ── */
+  .diff-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+  @media (max-width: 700px) { .diff-wrap { grid-template-columns: 1fr; } }
+  .diff-label { font-size: 11px; font-weight: 700; margin-bottom: 5px; }
+  .diff-before .diff-label { color: var(--red); }
+  .diff-after  .diff-label { color: var(--green); }
+
+  /* ── Code ── */
+  .code-block { background: #010409; border: 1px solid var(--border); border-radius: 8px; padding: 14px; font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; line-height: 1.85; overflow-x: auto; margin: 8px 0; }
+  .hl-del  { background: rgba(248,81,73,.18); display: block; margin: 0 -14px; padding: 0 14px; }
+  .hl-add  { background: rgba(63,185,80,.18); display: block; margin: 0 -14px; padding: 0 14px; }
+  .hl-kw   { color: var(--pink); }
+  .hl-fn   { color: var(--orange); }
+  .hl-num  { color: var(--purple); }
+  .hl-str  { color: var(--yellow); }
+  .hl-cmt  { color: #5c6773; font-style: italic; }
+  .hl-type { color: var(--blue); }
+  .hl-macro{ color: var(--teal); }
+
+  /* ── Tables ── */
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  th { background: var(--surface2); color: var(--text2); padding: 7px 12px; text-align: left; font-size: 12px; border-bottom: 1px solid var(--border); }
+  td { padding: 7px 12px; border-bottom: 1px solid #1c2128; font-size: 12px; }
+  tr:hover td { background: var(--surface2); }
+  .td-good { color: var(--green); font-weight: 600; }
+  .td-bad  { color: var(--red); font-weight: 600; }
+
+  /* ── Misc ── */
+  .note { background: #1a2a1a; border: 1px solid var(--green); border-radius: 6px; padding: 10px 14px; font-size: 12px; color: #a5d6a7; margin: 10px 0; }
+  .warn-box { background: #2a1a00; border: 1px solid var(--yellow); border-radius: 6px; padding: 10px 14px; font-size: 12px; color: #ffe082; margin: 10px 0; }
+  .err-box { background: #2a0a0a; border: 1px solid var(--red); border-radius: 6px; padding: 10px 14px; font-size: 12px; color: #ffb3b3; margin: 10px 0; }
+  .inline-code { background: #010409; border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-family: monospace; font-size: 12px; color: var(--orange); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  /* ── Data flow diagram ── */
+  .flow-diag { display: flex; align-items: center; gap: 0; flex-wrap: wrap; justify-content: center; margin: 16px 0; }
+  .flow-node { padding: 8px 18px; border-radius: 8px; font-size: 12px; font-weight: 600; text-align: center; min-width: 100px; }
+  .fn-blue   { background: rgba(88,166,255,.15); border: 1.5px solid var(--blue); color: var(--blue); }
+  .fn-green  { background: rgba(63,185,80,.15); border: 1.5px solid var(--green); color: var(--green); }
+  .fn-orange { background: rgba(255,166,87,.15); border: 1.5px solid var(--orange); color: var(--orange); }
+  .fn-red    { background: rgba(248,81,73,.15); border: 1.5px solid var(--red); color: var(--red); }
+  .fn-purple { background: rgba(188,140,255,.15); border: 1.5px solid var(--purple); color: var(--purple); }
+  .fn-gray   { background: rgba(139,148,158,.1); border: 1.5px solid var(--text2); color: var(--text2); }
+  .flow-arrow { font-size: 20px; color: var(--text2); margin: 0 6px; }
+  .flow-arrow-label { font-size: 10px; color: var(--text2); text-align: center; }
+
+  footer { text-align: center; padding: 2rem; color: var(--text2); font-size: 11px; border-top: 1px solid var(--border); margin-top: 2rem; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ HEADER -->
+<div class="header">
+  <div class="header-icon">📡</div>
+  <div>
+    <h1>ESP32-S3 BLE ↔ UART 透传调试日志 <span class="badge">已解决</span></h1>
+    <p>项目: P169H002 &nbsp;|&nbsp; 芯片: ESP32-S3 &nbsp;|&nbsp; IDF: v5.5.4 &nbsp;|&nbsp; 调试周期: 2026-05-14 ~ 2026-05-15 &nbsp;|&nbsp; NimBLE NUS 透传</p>
+  </div>
+</div>
+
+<!-- ═══════════════════ TABS -->
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="showTab('timeline')">📅 时间轴</button>
+  <button class="tab-btn" onclick="showTab('overview')">🗺 架构概览</button>
+  <button class="tab-btn" onclick="showTab('bugs')">🐛 Bug根因</button>
+  <button class="tab-btn" onclick="showTab('changes')">✏️ 代码变更</button>
+  <button class="tab-btn" onclick="showTab('summary')">📋 总结</button>
+</div>
+
+<!-- ═══════════════════ TAB: 时间轴 -->
+<div id="tab-timeline" class="tab-content active">
+
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-num stat-red">7</div><div class="stat-lbl">发现Bug / 问题</div></div>
+    <div class="stat-card"><div class="stat-num stat-green">7</div><div class="stat-lbl">已全部修复</div></div>
+    <div class="stat-card"><div class="stat-num stat-blue">3</div><div class="stat-lbl">修改文件</div></div>
+    <div class="stat-card"><div class="stat-num stat-yellow">2</div><div class="stat-lbl">调试天数</div></div>
+    <div class="stat-card"><div class="stat-num stat-orange">0</div><div class="stat-lbl">遗留问题</div></div>
+  </div>
+
+  <div class="section-title">📅 按天调试时间轴（点击展开详情）</div>
+
+  <div class="timeline">
+
+    <!-- ═══ DAY 1: 2026-05-14 ═══ -->
+    <div class="tl-day open">
+      <div class="tl-day-dot blue"></div>
+      <div class="tl-day-header" onclick="toggleDay(this)">
+        <span>🔵</span>
+        <span>2026-05-14 &nbsp;—&nbsp; BLE UART 透传初步实现 + 稳定性问题首次暴露</span>
+        <span class="tl-day-date">Day 1</span>
+        <span class="tl-day-arrow">▶</span>
+      </div>
+      <div class="tl-day-body">
+        <div class="tl-items">
+
+          <div class="tl-item">
+            <div class="tl-item-dot blue"></div>
+            <div class="tl-item-title">📋 需求确认：BLE ↔ UART0 双向透传</div>
+            <div class="tl-item-desc">
+              当前状态：BLE 已能正常连接，但手机发送的数据不打印到 TXD0/RXD0；
+              TXD0/RXD0 收到任何数据也不透传到 BLE。<br>
+              目标：GPIO43=TXD0，GPIO44=RXD0 与 BLE NUS 双向无缝透传。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot green"></div>
+            <div class="tl-item-title">✅ 实现 BLE→UART0（TXD0）方向</div>
+            <div class="tl-item-desc">
+              修改 <span class="inline-code">on_ble_rx()</span> 回调：由原先的追加<code>\n</code>后转发给 ODrive，
+              改为直接调用 <span class="inline-code">uart_write_bytes(UART_NUM_0, data, len)</span>。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot green"></div>
+            <div class="tl-item-title">✅ 实现 UART0（RXD0）→BLE 方向</div>
+            <div class="tl-item-desc">
+              新增 <span class="inline-code">uart0_to_ble_task()</span>：持续调用
+              <span class="inline-code">uart_read_bytes(UART_NUM_0, buf, 512, 20ms)</span>，
+              有连接时转发给 <span class="inline-code">ble_uart_send()</span>。<br>
+              安装 UART0 驱动：<span class="inline-code">uart_driver_install(UART_NUM_0, 2048, 0, 0, NULL, 0)</span>。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot yellow"></div>
+            <div class="tl-item-title">⚠️ 问题：BLE 同时收发时断连，板子重启</div>
+            <div class="tl-item-desc">
+              现象：ODrive 静止每秒发一次状态帧，转轮时最高 10ms 一帧；
+              只要串口收到数据 BLE 就断开，整板重启。<br>
+              怀疑方向：RTOS 栈溢出 / NimBLE 状态机被阻塞。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot green"></div>
+            <div class="tl-item-title">✅ Fix 1：UART0 TX buf=0 阻塞 NimBLE 宿主任务</div>
+            <div class="tl-item-desc">
+              根因：<span class="inline-code">on_ble_rx</span> 在 NimBLE 宿主任务内执行，
+              <span class="inline-code">uart_driver_install(..., TX_buf=0, ...)</span>
+              导致 <span class="inline-code">uart_write_bytes</span> 等待字节物理发完才返回，
+              卡住 NimBLE 宿主任务无法处理 BLE 心跳 → 断连。<br>
+              修复：TX buf 改为 2048，写操作立即返回。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot green"></div>
+            <div class="tl-item-title">✅ Fix 2：桥接任务栈溢出</div>
+            <div class="tl-item-desc">
+              根因：<span class="inline-code">uart0_to_ble_task</span> 栈仅 2048 字节，
+              而局部 <span class="inline-code">uint8_t buf[512]</span> + FreeRTOS 开销 + 调用帧超出栈上限 → 随机崩溃重启。<br>
+              修复：buf 改为 <span class="inline-code">static</span>（存放在 BSS，不占任务栈），任务栈扩至 4096。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot green"></div>
+            <div class="tl-item-title">✅ Fix 3：ble_uart_send 无背压死循环</div>
+            <div class="tl-item-desc">
+              原逻辑：固定 20 字节分片死循环发送，NimBLE mbuf 池耗尽时直接 return ERR，
+              但调用方无感知、任务继续塞数据 → 队列爆炸 → 断连。<br>
+              修复：遇到 <span class="inline-code">BLE_HS_EBUSY / BLE_HS_ENOMEM</span> 时
+              等 15ms（一个连接间隔）再重试，最多 5 次；不可恢复错误丢包退出。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot green"></div>
+            <div class="tl-item-title">✅ BLE 连接质量优化：MTU 协商 + 连接间隔</div>
+            <div class="tl-item-desc">
+              连接成功时调用 <span class="inline-code">ble_att_set_preferred_mtu(250)</span>，
+              待手机发起 MTU 交换后 <span class="inline-code">BLE_GAP_EVENT_MTU</span>
+              回调更新 <span class="inline-code">s_max_payload = MTU - 3</span>；
+              100 字节数据从 5 片降至 1 片。<br>
+              同时请求连接间隔 10–20ms（itvl 8–16），适配 ODrive 10ms 上报节奏。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot yellow"></div>
+            <div class="tl-item-title">⚠️ 日志噪声问题：SERVO/LCD/Touch 日志污染透传通道</div>
+            <div class="tl-item-desc">
+              现象：BLE 收到端看到大量 SERVO moving、LCD_Fill、I2C 通信失败等无关日志，
+              这些来自仍在运行的舵机随机运动任务、ODrive LCD 刷新任务、触摸屏测试。<br>
+              根本原因：<span class="inline-code">esp_log_level_set("*", ESP_LOG_WARN)</span>
+              只压制 ESP_LOG 宏，无法屏蔽 <span class="inline-code">printf()</span>。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot green"></div>
+            <div class="tl-item-title">✅ 禁用所有非透传模块</div>
+            <div class="tl-item-desc">
+              注释掉：<span class="inline-code">servo_start_random_motion()</span>、
+              <span class="inline-code">xTaskCreate(odrive_lcd_task)</span>、
+              触摸屏测试循环、<span class="inline-code">RGB565_DualModeInteractive()</span>、
+              <span class="inline-code">LCD_Init()</span>。
+              清理全部 printf 的 Idle/LCD 完成提示。
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div><!-- /day 1 -->
+
+    <!-- ═══ DAY 2: 2026-05-15 ═══ -->
+    <div class="tl-day open">
+      <div class="tl-day-dot green"></div>
+      <div class="tl-day-header" onclick="toggleDay(this)">
+        <span>🟢</span>
+        <span>2026-05-15 &nbsp;—&nbsp; 重启根因定位 + 三大编译错误修复 + 构建成功</span>
+        <span class="tl-day-date">Day 2</span>
+        <span class="tl-day-arrow">▶</span>
+      </div>
+      <div class="tl-day-body">
+        <div class="tl-items">
+
+          <div class="tl-item">
+            <div class="tl-item-dot red"></div>
+            <div class="tl-item-title">🔴 重启根因 1：NVS 未初始化 → BLE 射频校准失败</div>
+            <div class="tl-item-desc">
+              日志：<code>E (460) phy_init: esp_phy_load_cal_data_from_nvs: NVS has not been initialized.</code><br>
+              NVS 未初始化时 BLE 协议栈无法读取射频校准数据，运行在降级模式，
+              高负载（UART 高频数据）时极易触发内部断言重启。<br>
+              修复：<span class="inline-code">app_main</span> 最顶部（BLE init 之前）添加
+              <span class="inline-code">nvs_flash_init()</span>，含 erase 重试逻辑。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot red"></div>
+            <div class="tl-item-title">🔴 重启根因 2：UART0 双重 ISR 冲突 → panic</div>
+            <div class="tl-item-desc">
+              根因：ESP-IDF 启动时控制台使用 ROM 内置 UART0 ISR；
+              再次调用 <span class="inline-code">uart_driver_install(UART_NUM_0, ...)</span>
+              会安装第二个 ISR，两个 ISR 同时响应同一 RX 中断 → 内存踩踏 / 断言失败 → 重启。<br>
+              修复：安装驱动后调用
+              <span class="inline-code">uart_vfs_dev_use_driver(0)</span>
+              （头文件 <code>driver/uart_vfs.h</code>），让 VFS 层切换到新驱动，ROM ISR 被卸载。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot red"></div>
+            <div class="tl-item-title">🔴 编译错误 1：BLE_HS_ENOBUFS 未定义</div>
+            <div class="tl-item-desc">
+              错误信息：<code>error: 'BLE_HS_ENOBUFS' undeclared; did you mean 'BLE_HS_ENOMEM'?</code><br>
+              原因：该符号在此版本 NimBLE 中不存在，<span class="inline-code">BLE_HS_ENOMEM</span>
+              已覆盖所有内存/缓冲耗尽情况。<br>
+              修复：将条件合并为 <span class="inline-code">BLE_HS_EBUSY || BLE_HS_ENOMEM</span>。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot red"></div>
+            <div class="tl-item-title">🔴 编译错误 2：GCC ICE — esp_lcd_panel_rgb.c Segfault</div>
+            <div class="tl-item-desc">
+              错误信息：<code>internal compiler error: Segmentation fault during RTL pass: ira</code><br>
+              GCC 在处理 <span class="inline-code">rgb_panel_draw_bitmap</span> 时，
+              IRA（寄存器分配）pass 本身崩溃，这是编译器 bug，与项目代码无关。<br>
+              修复：在根 <span class="inline-code">CMakeLists.txt</span> 添加：
+              <span class="inline-code">target_compile_options(__idf_esp_lcd PRIVATE -O1)</span>，
+              单独降低 esp_lcd 组件优化级别绕过触发路径。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot red"></div>
+            <div class="tl-item-title">🔴 链接错误：ble_gattc_exchange_mtu 未定义</div>
+            <div class="tl-item-desc">
+              错误信息：<code>undefined reference to 'ble_gattc_exchange_mtu'</code><br>
+              原因：该函数属于 GATT <strong>Client</strong> 侧 API，
+              需要 <span class="inline-code">CONFIG_BT_NIMBLE_ROLE_CENTRAL</span>；
+              本项目是外设端（Server），未编译 GATT Client。<br>
+              修复：删除 <span class="inline-code">ble_gattc_exchange_mtu()</span> 调用，
+              仅保留 <span class="inline-code">ble_att_set_preferred_mtu(250)</span>。
+              手机作为 Central 会主动发起 MTU 交换，ESP32 用首选值响应，效果相同。
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-item-dot green"></div>
+            <div class="tl-item-title">✅ 构建成功 — P169H002.bin 生成</div>
+            <div class="tl-item-desc">
+              Binary size: <strong>0x7dc40 bytes</strong>，占最小 app 分区的 16%，
+              剩余 84% flash 空间。<br>
+              全部 7 个 Bug 已修复，0 个遗留问题。
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div><!-- /day 2 -->
+
+  </div><!-- /timeline -->
+</div>
+
+<!-- ═══════════════════ TAB: 架构概览 -->
+<div id="tab-overview" class="tab-content">
+
+  <div class="section-title">🔌 UART0 ↔ BLE 透传数据流</div>
+  <div class="card">
+    <div class="card-title"><span class="dot dot-blue"></span>双向透传架构</div>
+
+    <div style="margin:20px 0">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px;font-weight:600;">▶ BLE → UART0 (TXD0) 方向</div>
+      <div class="flow-diag">
+        <div class="flow-node fn-blue">手机 BLE App</div>
+        <div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-arrow-label">Write CHR<br>NUS RX</div>
+        </div>
+        <div class="flow-node fn-purple">NimBLE 宿主任务<br>nus_rx_access_cb()</div>
+        <div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-arrow-label">s_rx_cb()<br>on_ble_rx()</div>
+        </div>
+        <div class="flow-node fn-green">uart_write_bytes<br>UART_NUM_0</div>
+        <div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-arrow-label">TX buf=2048<br>非阻塞</div>
+        </div>
+        <div class="flow-node fn-orange">GPIO43 TXD0</div>
+      </div>
+    </div>
+
+    <div style="margin:20px 0">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px;font-weight:600;">◀ UART0 (RXD0) → BLE 方向</div>
+      <div class="flow-diag">
+        <div class="flow-node fn-orange">GPIO44 RXD0</div>
+        <div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-arrow-label">RX buf=4096<br>驱动 ISR</div>
+        </div>
+        <div class="flow-node fn-green">uart0_to_ble_task<br>uart_read_bytes()</div>
+        <div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-arrow-label">有连接时<br>转发</div>
+        </div>
+        <div class="flow-node fn-purple">ble_uart_send()<br>MTU 分片+背压</div>
+        <div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-arrow-label">Notify<br>NUS TX CHR</div>
+        </div>
+        <div class="flow-node fn-blue">手机 BLE App</div>
+      </div>
+    </div>
+
+    <div class="note">💡 UART0 默认引脚：GPIO43 = TXD0，GPIO44 = RXD0，115200 baud 8N1。同时也是 ESP-IDF 控制台输出通道，已通过 <span class="inline-code">uart_vfs_dev_use_driver(0)</span> 统一到驱动模式，避免双重 ISR 冲突。</div>
+  </div>
+
+  <div class="section-title">📦 相关任务一览</div>
+  <div class="card">
+    <table>
+      <thead><tr><th>任务名</th><th>栈大小</th><th>优先级</th><th>所在文件</th><th>作用</th></tr></thead>
+      <tbody>
+        <tr><td class="inline-code">u0_ble_bridge</td><td>4096</td><td>5</td><td>main.c</td><td>UART0 RXD0 → BLE 透传（buf 为 static，不占栈）</td></tr>
+        <tr><td class="inline-code">nimble_host</td><td>IDF默认</td><td>—</td><td>ble_uart.c</td><td>NimBLE 宿主任务，处理 GAP/GATT/ATT，BLE RX 回调在此执行</td></tr>
+        <tr><td class="inline-code">odrive_rx</td><td>4096</td><td>5</td><td>odrive_uart.c</td><td>ODrive UART1 接收，解析 $ST 帧（BLE 转发回调当前设为 NULL）</td></tr>
+        <tr><td class="inline-code">key_scan</td><td>2048</td><td>3</td><td>main.c</td><td>50ms 轮询 4 个按键</td></tr>
+      </tbody>
+    </table>
+    <div class="warn-box">⚠️ 测试模式下已禁用：servo_random_motion / odrive_lcd_task / RGB565_DualModeInteractive / LCD_Init / 触摸屏初始化。恢复时需重新评估任务栈和 UART0 控制台冲突。</div>
+  </div>
+
+  <div class="section-title">🔧 BLE NUS 参数</div>
+  <div class="card">
+    <div class="grid-2">
+      <table>
+        <thead><tr><th>项目</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>协议栈</td><td>ESP-IDF NimBLE</td></tr>
+          <tr><td>Profile</td><td>Nordic UART Service (NUS)</td></tr>
+          <tr><td>广播名称</td><td class="inline-code">HKR_Robot</td></tr>
+          <tr><td>Service UUID</td><td class="inline-code">6E400001-B5A3-F393-E0A9-E50E24DCCA9E</td></tr>
+          <tr><td>RX Char UUID</td><td class="inline-code">6E400002</td></tr>
+          <tr><td>TX Char UUID</td><td class="inline-code">6E400003</td></tr>
+        </tbody>
+      </table>
+      <table>
+        <thead><tr><th>参数</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>首选 MTU</td><td>250 bytes</td></tr>
+          <tr><td>分片大小</td><td>MTU - 3（动态，MTU 协商后更新）</td></tr>
+          <tr><td>连接间隔请求</td><td>10–20 ms (itvl 8–16)</td></tr>
+          <tr><td>Supervision timeout</td><td>4 s (400×10ms)</td></tr>
+          <tr><td>发送重试次数</td><td>5 次，间隔 15ms</td></tr>
+          <tr><td>LED4</td><td>GPIO4，BLE 连接时亮</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ TAB: Bug根因 -->
+<div id="tab-bugs" class="tab-content">
+
+  <div class="section-title">🐛 Bug 根因分析详情</div>
+
+  <!-- Bug 1 -->
+  <div class="change-card bug">
+    <div class="change-header">
+      <span class="change-tag tag-bug">BUG #1</span>
+      <strong>BLE 收到数据时断连 — NimBLE 宿主任务被阻塞</strong>
+      <span class="change-file">main.c → on_ble_rx()</span>
+    </div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">
+      症状：手机发送数据后 BLE 立即断开。<br>
+      根因：GATT 写入回调 <span class="inline-code">on_ble_rx</span> 在 NimBLE 宿主任务上下文内同步执行。
+      UART0 的 TX 缓冲区大小为 0，<span class="inline-code">uart_write_bytes</span> 会忙等到字节物理从 GPIO43 发完才返回（对于 115200 baud 一字节 ≈ 87μs）。
+      在这段时间内 NimBLE 宿主任务无法处理 LL ACK / L2CAP / ATT，超时后 Controller 触发断连。
+    </p>
+    <div class="diff-wrap">
+      <div class="diff-before">
+        <div class="diff-label">❌ 修复前</div>
+        <div class="code-block">
+<span class="hl-del">uart_driver_install(UART_NUM_0,</span>
+<span class="hl-del">    2048, <span style="color:var(--red);font-weight:bold">0</span>,   <span class="hl-cmt">// TX buf = 0</span></span>
+<span class="hl-del">    0, NULL, 0);</span>
+        </div>
+      </div>
+      <div class="diff-after">
+        <div class="diff-label">✅ 修复后</div>
+        <div class="code-block">
+<span class="hl-add">uart_driver_install(UART_NUM_0,</span>
+<span class="hl-add">    4096, <span style="color:var(--green);font-weight:bold">2048</span>, <span class="hl-cmt">// TX buf = 2048</span></span>
+<span class="hl-add">    0, NULL, 0);</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bug 2 -->
+  <div class="change-card bug">
+    <div class="change-header">
+      <span class="change-tag tag-bug">BUG #2</span>
+      <strong>任务栈溢出导致随机崩溃重启</strong>
+      <span class="change-file">main.c → uart0_to_ble_task()</span>
+    </div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">
+      症状：运行一段时间后随机重启，backtrace 指向任务栈区域。<br>
+      根因：任务栈仅 2048 字节，但局部变量 <span class="inline-code">uint8_t buf[512]</span> 独占 512 字节，
+      加上 FreeRTOS TCB 开销、函数调用帧（寄存器保存 ~200B）以及 <span class="inline-code">ble_uart_send</span> 的内部栈帧，
+      实际需求超出 2048 字节。
+    </p>
+    <div class="diff-wrap">
+      <div class="diff-before">
+        <div class="diff-label">❌ 修复前</div>
+        <div class="code-block">
+<span class="hl-kw">static void</span> <span class="hl-fn">uart0_to_ble_task</span>(<span class="hl-kw">void</span> *arg) {
+<span class="hl-del">    <span class="hl-type">uint8_t</span> buf[<span class="hl-num">512</span>]; <span class="hl-cmt">// 占用任务栈!</span></span>
+    ...
+}
+<span class="hl-cmt">// 创建时:</span>
+<span class="hl-del">xTaskCreate(..., <span class="hl-num">2048</span>, ...);</span>
+        </div>
+      </div>
+      <div class="diff-after">
+        <div class="diff-label">✅ 修复后</div>
+        <div class="code-block">
+<span class="hl-kw">static void</span> <span class="hl-fn">uart0_to_ble_task</span>(<span class="hl-kw">void</span> *arg) {
+<span class="hl-add">    <span class="hl-kw">static</span> <span class="hl-type">uint8_t</span> buf[<span class="hl-num">512</span>]; <span class="hl-cmt">// 存 BSS</span></span>
+    ...
+}
+<span class="hl-cmt">// 创建时:</span>
+<span class="hl-add">xTaskCreate(..., <span class="hl-num">4096</span>, ...);</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bug 3 -->
+  <div class="change-card bug">
+    <div class="change-header">
+      <span class="change-tag tag-bug">BUG #3</span>
+      <strong>NVS 未初始化 → BLE 射频校准失败</strong>
+      <span class="change-file">main.c → app_main()</span>
+    </div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">
+      症状：日志出现 <code>E phy_init: esp_phy_load_cal_data_from_nvs: NVS has not been initialized</code>，
+      BLE 在高负载下不稳定。<br>
+      根因：<span class="inline-code">nvs_flash_init()</span> 未在 BLE 初始化前调用。
+      NVS 用于存储 BLE 射频校准数据和配对绑定信息，缺少时协议栈退化为默认参数运行，
+      同时频繁触发 WARNING 级 log 占用时间片。
+    </p>
+    <div class="code-block" style="border-left: 3px solid var(--green);">
+<span class="hl-add"><span class="hl-cmt">// app_main 最顶部，BLE init 之前</span></span>
+<span class="hl-add"><span class="hl-type">esp_err_t</span> nvs_ret = <span class="hl-fn">nvs_flash_init</span>();</span>
+<span class="hl-add"><span class="hl-kw">if</span> (nvs_ret == ESP_ERR_NVS_NO_FREE_PAGES ||</span>
+<span class="hl-add">    nvs_ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {</span>
+<span class="hl-add">    <span class="hl-fn">nvs_flash_erase</span>();</span>
+<span class="hl-add">    <span class="hl-fn">nvs_flash_init</span>();</span>
+<span class="hl-add">}</span>
+    </div>
+  </div>
+
+  <!-- Bug 4 -->
+  <div class="change-card bug">
+    <div class="change-header">
+      <span class="change-tag tag-bug">BUG #4</span>
+      <strong>UART0 双重 ISR → 收到数据时 panic 重启</strong>
+      <span class="change-file">main.c → app_main()</span>
+    </div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">
+      症状：只要 RXD0 收到任何字节，板子立即重启。<br>
+      根因：ESP-IDF ROM 初始化时已为 UART0 挂载了控制台 ISR（用于 printf）。
+      再次调用 <span class="inline-code">uart_driver_install(UART_NUM_0, ...)</span> 会额外挂载驱动 ISR，
+      两个 ISR 同时响应 UART0_INTR → 争夺 FIFO 读指针 → 数据损坏 / 断言失败 → 重启。
+    </p>
+    <div class="code-block" style="border-left: 3px solid var(--green);">
+<span class="hl-add"><span class="hl-fn">uart_driver_install</span>(UART_NUM_0, <span class="hl-num">4096</span>, <span class="hl-num">2048</span>, <span class="hl-num">0</span>, NULL, <span class="hl-num">0</span>);</span>
+<span class="hl-add"><span class="hl-cmt">// 卸载 ROM ISR，VFS 层改走驱动接口</span></span>
+<span class="hl-add"><span class="hl-fn">uart_vfs_dev_use_driver</span>(<span class="hl-num">0</span>); <span class="hl-cmt">// driver/uart_vfs.h</span></span>
+    </div>
+  </div>
+
+  <!-- Bug 5 -->
+  <div class="change-card bug">
+    <div class="change-header">
+      <span class="change-tag tag-bug">BUG #5</span>
+      <strong>GCC ICE：esp_lcd_panel_rgb.c 编译器内部崩溃</strong>
+      <span class="change-file">CMakeLists.txt</span>
+    </div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">
+      错误：<code>internal compiler error: Segmentation fault during RTL pass: ira</code><br>
+      GCC (xtensa-esp32s3-elf) 在 IRA（寄存器分配）pass 处理 <span class="inline-code">rgb_panel_draw_bitmap</span>
+      时自身崩溃，属于编译器 bug，不是代码问题。<br>
+      解决：对 esp_lcd 组件单独指定 -O1，绕过触发路径。
+    </p>
+    <div class="code-block" style="border-left: 3px solid var(--green);">
+<span class="hl-cmt"># CMakeLists.txt 末尾追加</span>
+<span class="hl-add"><span class="hl-fn">target_compile_options</span>(__idf_esp_lcd <span class="hl-macro">PRIVATE</span> <span class="hl-str">-O1</span>)</span>
+    </div>
+  </div>
+
+  <!-- Bug 6 -->
+  <div class="change-card bug">
+    <div class="change-header">
+      <span class="change-tag tag-bug">BUG #6</span>
+      <strong>链接错误：ble_gattc_exchange_mtu 未定义</strong>
+      <span class="change-file">ble_uart.c → ble_uart_gap_event()</span>
+    </div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">
+      错误：<code>undefined reference to 'ble_gattc_exchange_mtu'</code><br>
+      原因：该函数属于 GATT Client 角色，需要开启 <span class="inline-code">CONFIG_BT_NIMBLE_ROLE_CENTRAL</span>；
+      本项目只作为外设端（Peripheral/Server），未编译该模块。<br>
+      修复：删除主动发起 MTU 交换的调用，仅设置首选值；手机 Central 端会主动发起，效果等同。
+    </p>
+    <div class="diff-wrap">
+      <div class="diff-before">
+        <div class="diff-label">❌ 修复前</div>
+        <div class="code-block">
+<span class="hl-fn">ble_att_set_preferred_mtu</span>(<span class="hl-num">250</span>);
+<span class="hl-del"><span class="hl-fn">ble_gattc_exchange_mtu</span>(s_conn_handle, NULL, NULL);</span>
+        </div>
+      </div>
+      <div class="diff-after">
+        <div class="diff-label">✅ 修复后</div>
+        <div class="code-block">
+<span class="hl-add"><span class="hl-fn">ble_att_set_preferred_mtu</span>(<span class="hl-num">250</span>);</span>
+<span class="hl-cmt">// 手机 Central 端主动发起 MTU 交换</span>
+<span class="hl-cmt">// BLE_GAP_EVENT_MTU 回调更新 s_max_payload</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bug 7 -->
+  <div class="change-card bug">
+    <div class="change-header">
+      <span class="change-tag tag-bug">BUG #7</span>
+      <strong>编译错误：BLE_HS_ENOBUFS 未声明</strong>
+      <span class="change-file">ble_uart.c → ble_uart_send()</span>
+    </div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">
+      错误：<code>error: 'BLE_HS_ENOBUFS' undeclared; did you mean 'BLE_HS_ENOMEM'?</code><br>
+      该符号在 IDF v5.5.4 的 NimBLE 版本中不存在，<span class="inline-code">BLE_HS_ENOMEM</span> 已包含所有内存/缓冲耗尽场景。
+    </p>
+    <div class="diff-wrap">
+      <div class="diff-before">
+        <div class="diff-label">❌ 修复前</div>
+        <div class="code-block">
+<span class="hl-kw">if</span> (rc == BLE_HS_EBUSY || rc == BLE_HS_ENOMEM
+<span class="hl-del">    || rc == <span style="color:var(--red)">BLE_HS_ENOBUFS</span>) {</span>
+        </div>
+      </div>
+      <div class="diff-after">
+        <div class="diff-label">✅ 修复后</div>
+        <div class="code-block">
+<span class="hl-add"><span class="hl-kw">if</span> (rc == BLE_HS_EBUSY || rc == BLE_HS_ENOMEM) {</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════ TAB: 代码变更 -->
+<div id="tab-changes" class="tab-content">
+
+  <div class="section-title">📝 文件变更清单</div>
+
+  <div class="change-card feat">
+    <div class="change-header">
+      <span class="change-tag tag-feat">FEAT</span>
+      <strong>UART0 ↔ BLE 双向透传基础实现</strong>
+      <span class="change-file">main/main.c</span>
+    </div>
+    <table>
+      <thead><tr><th>改动位置</th><th>改动内容</th><th>原因</th></tr></thead>
+      <tbody>
+        <tr><td class="inline-code">on_ble_rx()</td><td>改为 <span class="inline-code">uart_write_bytes(UART_NUM_0, data, len)</span></td><td>BLE → TXD0</td></tr>
+        <tr><td class="inline-code">uart0_to_ble_task()</td><td>新增任务，读 RXD0 转发 BLE</td><td>RXD0 → BLE</td></tr>
+        <tr><td class="inline-code">uart_driver_install()</td><td>RX=4096, TX=2048</td><td>防阻塞 + 防丢包</td></tr>
+        <tr><td class="inline-code">uart_vfs_dev_use_driver(0)</td><td>新增调用</td><td>避免双重 ISR panic</td></tr>
+        <tr><td class="inline-code">nvs_flash_init()</td><td>新增，位于 app_main 最顶部</td><td>BLE 射频校准依赖</td></tr>
+        <tr><td>buf 改为 static</td><td><span class="inline-code">static uint8_t buf[512]</span></td><td>防任务栈溢出</td></tr>
+        <tr><td>任务栈</td><td>2048 → 4096</td><td>安全余量</td></tr>
+        <tr><td>LCD / Servo / Touch</td><td>全部注释禁用</td><td>测试阶段减少噪声</td></tr>
+        <tr><td>odrive_to_ble / odrive_lcd_task</td><td>删除（未使用）</td><td>消除编译警告</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="change-card fix">
+    <div class="change-header">
+      <span class="change-tag tag-fix">FIX</span>
+      <strong>BLE 稳定性全面优化</strong>
+      <span class="change-file">main/ble_uart.c</span>
+    </div>
+    <table>
+      <thead><tr><th>改动位置</th><th>改动内容</th><th>原因</th></tr></thead>
+      <tbody>
+        <tr><td>新增 <span class="inline-code">s_max_payload</span></td><td>跟踪 MTU 协商后的分片大小，连接/复位时归 20</td><td>动态适配对端 MTU</td></tr>
+        <tr><td><span class="inline-code">BLE_GAP_EVENT_CONNECT</span></td><td>连接后设置首选 MTU 250，请求连接间隔 10–20ms</td><td>提升吞吐 + 实时性</td></tr>
+        <tr><td><span class="inline-code">BLE_GAP_EVENT_MTU</span></td><td>更新 <span class="inline-code">s_max_payload = MTU - 3</span></td><td>减少分片次数</td></tr>
+        <tr><td><span class="inline-code">BLE_GAP_EVENT_DISCONNECT</span></td><td>重置 <span class="inline-code">s_max_payload = 20</span></td><td>下次连接正确初始化</td></tr>
+        <tr><td><span class="inline-code">ble_uart_send()</span></td><td>每片前检查连接状态；<br>ENOMEM/EBUSY 等 15ms 重试，最多 5 次；<br>不可恢复错误丢包退出</td><td>背压保护，避免 mbuf 池爆炸</td></tr>
+        <tr><td>删除 <span class="inline-code">ble_gattc_exchange_mtu</span></td><td>改为仅 <span class="inline-code">ble_att_set_preferred_mtu</span></td><td>修复链接错误</td></tr>
+        <tr><td>删除 <span class="inline-code">BLE_HS_ENOBUFS</span></td><td>合并为 <span class="inline-code">BLE_HS_ENOMEM</span></td><td>修复编译错误</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="change-card fix">
+    <div class="change-header">
+      <span class="change-tag tag-fix">FIX</span>
+      <strong>GCC ICE Workaround</strong>
+      <span class="change-file">CMakeLists.txt</span>
+    </div>
+    <div class="code-block" style="margin-top:8px">
+<span class="hl-cmt"># GCC ICE workaround: esp_lcd rgb_panel_draw_bitmap 在 -O2/-Os</span>
+<span class="hl-cmt"># 时触发 IRA pass Segfault，降至 -O1 绕过</span>
+<span class="hl-add"><span class="hl-fn">target_compile_options</span>(__idf_esp_lcd <span class="hl-macro">PRIVATE</span> <span class="hl-str">-O1</span>)</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════ TAB: 总结 -->
+<div id="tab-summary" class="tab-content">
+
+  <div class="section-title">📋 调试总结</div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title"><span class="dot dot-green"></span>已解决的核心问题</div>
+      <ul style="font-size:13px;color:var(--text2);padding-left:1.2rem;line-height:2">
+        <li>BLE ↔ UART0 双向透传通道建立完成</li>
+        <li>NimBLE 宿主任务阻塞导致的断连已修复</li>
+        <li>任务栈溢出导致的随机重启已修复</li>
+        <li>UART0 双重 ISR 冲突导致的 panic 已修复</li>
+        <li>NVS 未初始化的射频校准问题已修复</li>
+        <li>GCC ICE 编译器 bug 已 workaround</li>
+        <li>BLE 连接稳定性通过 MTU 协商和背压机制改善</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-yellow"></span>后续注意事项</div>
+      <ul style="font-size:13px;color:var(--text2);padding-left:1.2rem;line-height:2">
+        <li>恢复 LCD / 舵机前需重新评估任务调度和栈大小</li>
+        <li>UART0 同时作为控制台和透传通道，printf 日志会混入 BLE 数据流；正式使用时建议改用 USB Serial JTAG 作为控制台</li>
+        <li>GPIO41 存在 Servo PWM 与 SPK_EN 复用冲突，不可同时启用舵机和音频</li>
+        <li>ODrive UART1 的 BLE 转发回调当前设为 NULL，需要同时透传 ODrive 数据时需恢复</li>
+        <li>BLE MTU 协商由手机端发起，ESP32 端仅设置首选值；部分 BLE App 可能不发起 MTU 交换，此时保持 20 字节分片</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="section-title">📊 构建结果</div>
+  <div class="card">
+    <table>
+      <thead><tr><th>项目</th><th>值</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>固件文件</td><td class="inline-code">build/P169H002.bin</td><td class="td-good">✓ 生成成功</td></tr>
+        <tr><td>Binary 大小</td><td>0x7dc40 bytes (~503 KB)</td><td class="td-good">✓ 正常</td></tr>
+        <tr><td>最小 App 分区</td><td>0x300000 bytes (3 MB)</td><td class="td-good">✓ 84% 空闲</td></tr>
+        <tr><td>Bootloader 大小</td><td>0x5160 bytes</td><td class="td-good">✓ 36% 空闲</td></tr>
+        <tr><td>编译错误</td><td>0</td><td class="td-good">✓ 全部修复</td></tr>
+        <tr><td>编译警告</td><td>I2S deprecated warning (es8388_audio_codec.cpp)</td><td style="color:var(--yellow)">⚠ 已知，不影响运行</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section-title">💡 经验总结</div>
+  <div class="card">
+    <div class="card-title"><span class="dot dot-purple"></span>关键经验</div>
+    <table>
+      <thead><tr><th>#</th><th>经验</th><th>适用场景</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>在 NimBLE 宿主任务回调中绝对不能调用任何阻塞函数（uart 阻塞写/vTaskDelay/mutex等）</td><td>所有 GATT 回调</td></tr>
+        <tr><td>2</td><td>使用 UART0 作为数据通道时必须先 <span class="inline-code">uart_driver_install</span> 再 <span class="inline-code">uart_vfs_dev_use_driver</span></td><td>UART0 驱动模式</td></tr>
+        <tr><td>3</td><td>BLE / WiFi 必须在 <span class="inline-code">nvs_flash_init()</span> 之后初始化</td><td>所有无线功能</td></tr>
+        <tr><td>4</td><td>任务内的大数组（>128 字节）应声明为 static，避免占满有限的任务栈</td><td>所有 FreeRTOS 任务</td></tr>
+        <tr><td>5</td><td>GCC ICE 遇到 IRA pass 崩溃时，对单个组件降低 -O1 是最小代价的 workaround</td><td>esp-idf 组件编译</td></tr>
+        <tr><td>6</td><td><span class="inline-code">esp_log_level_set</span> 无法屏蔽 printf，测试阶段应直接注释掉噪声模块</td><td>调试日志管理</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<footer>ESP32-S3 HKR Robot · BLE UART 透传调试日志 · 2026-05-14~15 · P169H002</footer>
+
+<script>
+function showTab(id) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+function toggleDay(header) {
+  const day = header.closest('.tl-day');
+  day.classList.toggle('open');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ODrive 5065 Hall FOC — 调试日志</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+    --border: #30363d; --text: #e6edf3; --text2: #8b949e;
+    --green: #3fb950; --red: #f85149; --yellow: #e3b341;
+    --blue: #58a6ff; --purple: #bc8cff; --orange: #ffa657;
+    --teal: #39d353; --pink: #ff7b72;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.6; }
+
+  /* ── Header ── */
+  .header { background: linear-gradient(135deg, #0d1117 0%, #1a2332 100%); border-bottom: 1px solid var(--border); padding: 20px 32px; display: flex; align-items: center; gap: 16px; }
+  .header-icon { font-size: 32px; }
+  .header h1 { font-size: 20px; font-weight: 700; color: var(--blue); }
+  .header p { color: var(--text2); font-size: 12px; margin-top: 2px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; background: var(--green); color: #000; margin-left: 8px; }
+
+  /* ── Tabs ── */
+  .tab-bar { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; overflow-x: auto; }
+  .tab-btn { padding: 12px 20px; cursor: pointer; border: none; background: none; color: var(--text2); font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent; white-space: nowrap; transition: all .2s; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .tab-icon { margin-right: 6px; }
+
+  /* ── Content ── */
+  .tab-content { display: none; padding: 28px 32px; max-width: 1200px; margin: 0 auto; }
+  .tab-content.active { display: block; }
+
+  /* ── Cards ── */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  .card-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card-title .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot-green { background: var(--green); }
+  .dot-red { background: var(--red); }
+  .dot-yellow { background: var(--yellow); }
+  .dot-blue { background: var(--blue); }
+  .dot-purple { background: var(--purple); }
+
+  /* ── Flow diagrams ── */
+  .flow { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .flow-row { display: flex; align-items: center; gap: 0; }
+  .flow-node { padding: 8px 18px; border-radius: 8px; font-size: 12px; font-weight: 600; text-align: center; min-width: 140px; }
+  .fn-start  { background: #1a3a1a; border: 1.5px solid var(--green); color: var(--green); border-radius: 20px; }
+  .fn-end    { background: #3a1a1a; border: 1.5px solid var(--red); color: var(--red); border-radius: 20px; }
+  .fn-proc   { background: var(--surface2); border: 1.5px solid var(--border); color: var(--text); }
+  .fn-cond   { background: #1a2a3a; border: 1.5px solid var(--blue); color: var(--blue); transform: skewX(-8deg); }
+  .fn-cond span { display: inline-block; transform: skewX(8deg); }
+  .fn-action { background: #1a1a3a; border: 1.5px solid var(--purple); color: var(--purple); }
+  .fn-new    { background: #1a3a2a; border: 1.5px solid var(--teal); color: var(--teal); position: relative; }
+  .fn-new::after { content: 'NEW'; position: absolute; top: -8px; right: -8px; background: var(--teal); color: #000; font-size: 9px; font-weight: 900; padding: 1px 5px; border-radius: 6px; }
+  .fn-warn   { background: #2a1a00; border: 1.5px solid var(--yellow); color: var(--yellow); }
+  .fn-err    { background: #2a0a0a; border: 1.5px solid var(--red); color: var(--red); }
+
+  .arrow-v   { width: 2px; height: 24px; background: var(--border); margin: 0 auto; position: relative; }
+  .arrow-v::after { content: ''; position: absolute; bottom: -5px; left: -4px; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--border); }
+  .arrow-h   { width: 32px; height: 2px; background: var(--border); position: relative; }
+  .arrow-h::after { content: ''; position: absolute; right: -5px; top: -4px; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid var(--border); }
+  .arrow-label { font-size: 10px; color: var(--text2); text-align: center; }
+
+  /* ── Two-column flow ── */
+  .flow-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 700px) { .flow-2col { grid-template-columns: 1fr; } }
+
+  /* ── Code blocks ── */
+  .code-block { background: #010409; border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; line-height: 1.8; overflow-x: auto; margin: 10px 0; }
+  .code-old  { border-left: 3px solid var(--red); }
+  .code-new  { border-left: 3px solid var(--green); }
+  .hl-del    { background: rgba(248,81,73,.18); display: block; margin: 0 -16px; padding: 0 16px; }
+  .hl-add    { background: rgba(63,185,80,.18); display: block; margin: 0 -16px; padding: 0 16px; }
+  .hl-kw     { color: var(--pink); }
+  .hl-type   { color: var(--blue); }
+  .hl-str    { color: var(--yellow); }
+  .hl-num    { color: var(--purple); }
+  .hl-cmt    { color: #5c6773; font-style: italic; }
+  .hl-fn     { color: var(--orange); }
+  .hl-macro  { color: var(--teal); }
+
+  /* ── Change cards ── */
+  .change-card { border-left: 3px solid; padding: 16px 20px; margin-bottom: 16px; border-radius: 0 8px 8px 0; background: var(--surface); }
+  .change-card.fix   { border-color: var(--green); }
+  .change-card.bug   { border-color: var(--red); }
+  .change-card.perf  { border-color: var(--blue); }
+  .change-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .change-tag { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+  .tag-fix   { background: #1a3a1a; color: var(--green); border: 1px solid var(--green); }
+  .tag-bug   { background: #3a1a1a; color: var(--red); border: 1px solid var(--red); }
+  .tag-perf  { background: #1a1a3a; color: var(--blue); border: 1px solid var(--blue); }
+  .change-file { color: var(--text2); font-family: monospace; font-size: 11px; }
+
+  /* ── Diff ── */
+  .diff-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .diff-label { font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+  .diff-before .diff-label { color: var(--red); }
+  .diff-after  .diff-label { color: var(--green); }
+  @media (max-width: 700px) { .diff-wrap { grid-template-columns: 1fr; } }
+
+  /* ── Table ── */
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th { background: var(--surface2); color: var(--text2); padding: 8px 12px; text-align: left; font-size: 12px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 12px; border-bottom: 1px solid #1c2128; font-size: 13px; }
+  tr:hover td { background: var(--surface2); }
+  .td-good  { color: var(--green); font-weight: 600; }
+  .td-bad   { color: var(--red); font-weight: 600; }
+  .td-warn  { color: var(--yellow); font-weight: 600; }
+
+  /* ── Timeline ── */
+  .timeline { position: relative; padding-left: 28px; }
+  .timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .tl-item { position: relative; margin-bottom: 20px; }
+  .tl-dot { position: absolute; left: -24px; top: 4px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--bg); }
+  .tl-dot.green { background: var(--green); }
+  .tl-dot.red   { background: var(--red); }
+  .tl-dot.blue  { background: var(--blue); }
+  .tl-dot.yellow{ background: var(--yellow); }
+  .tl-title { font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .tl-desc  { color: var(--text2); font-size: 12px; line-height: 1.6; }
+
+  /* ── Summary stat cards ── */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; }
+  .stat-num  { font-size: 28px; font-weight: 800; margin-bottom: 4px; }
+  .stat-lbl  { font-size: 11px; color: var(--text2); }
+  .stat-green { color: var(--green); }
+  .stat-red   { color: var(--red); }
+  .stat-blue  { color: var(--blue); }
+  .stat-yellow{ color: var(--yellow); }
+
+  /* ── Misc ── */
+  .section-title { font-size: 16px; font-weight: 700; color: var(--blue); margin: 24px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  .inline-code { background: #010409; border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-family: monospace; font-size: 12px; color: var(--orange); }
+  .note { background: #1a2a1a; border: 1px solid var(--green); border-radius: 6px; padding: 10px 14px; font-size: 12px; color: #a5d6a7; margin: 10px 0; }
+  .warn-box { background: #2a1a00; border: 1px solid var(--yellow); border-radius: 6px; padding: 10px 14px; font-size: 12px; color: #ffe082; margin: 10px 0; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ HEADER -->
+<div class="header">
+  <div class="header-icon">⚡</div>
+  <div>
+    <h1>ODrive 5065 Hall FOC — 调试日志 <span class="badge">已修复</span></h1>
+    <p>固件版本: ODrive-fw-v0.3.6_YOD_5065 &nbsp;|&nbsp; 调试日期: 2026-05-12 &nbsp;|&nbsp; 电机: 5065 / 270kV / 7极对 / 24-36V</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TABS -->
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="showTab('overview')"><span class="tab-icon">🗺</span>系统概览</button>
+  <button class="tab-btn" onclick="showTab('flow')"><span class="tab-icon">🔄</span>程序流程图</button>
+  <button class="tab-btn" onclick="showTab('changes')"><span class="tab-icon">✏️</span>修改记录</button>
+  <button class="tab-btn" onclick="showTab('bugs')"><span class="tab-icon">🐛</span>Bug根因分析</button>
+  <button class="tab-btn" onclick="showTab('summary')"><span class="tab-icon">📋</span>总结</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TAB: 系统概览 -->
+<div id="tab-overview" class="tab-content active">
+
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-num stat-red">6</div><div class="stat-lbl">发现Bug</div></div>
+    <div class="stat-card"><div class="stat-num stat-green">6</div><div class="stat-lbl">已修复</div></div>
+    <div class="stat-card"><div class="stat-num stat-blue">4</div><div class="stat-lbl">修改文件</div></div>
+    <div class="stat-card"><div class="stat-num stat-yellow">0</div><div class="stat-lbl">遗留问题</div></div>
+  </div>
+
+  <div class="section-title">📦 硬件配置</div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title"><span class="dot dot-blue"></span>MCU / 驱动板</div>
+      <table>
+        <tr><th>项目</th><th>参数</th></tr>
+        <tr><td>MCU</td><td>STM32F405RGTx (168 MHz)</td></tr>
+        <tr><td>驱动板</td><td>ODrive v3.4</td></tr>
+        <tr><td>VBUS</td><td>23.6 V</td></tr>
+        <tr><td>制动电阻</td><td>0.47 Ω</td></tr>
+        <tr><td>FOC 频率</td><td>~8.2 kHz（TIM1 10192 clocks@168MHz）</td></tr>
+        <tr><td>UART 调试</td><td>USART2, 115200 8N1 → PC</td></tr>
+        <tr><td>主控命令</td><td>UART4（原始协议）</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-green"></span>5065 电机参数</div>
+      <table>
+        <tr><th>参数</th><th>值</th></tr>
+        <tr><td>额定功率</td><td>1800 W</td></tr>
+        <tr><td>KV</td><td>270 rpm/V</td></tr>
+        <tr><td>极对数</td><td>7（14极）</td></tr>
+        <tr><td>相位电阻</td><td>~自动标定</td></tr>
+        <tr><td>pm_flux_linkage</td><td>2.92e-3 V/(rad/s)</td></tr>
+        <tr><td>电流限制</td><td>20 A（软限）</td></tr>
+        <tr><td>标定电流</td><td>3 A</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="section-title">📍 Hall 传感器接线</div>
+  <div class="card">
+    <div class="card-title"><span class="dot dot-yellow"></span>GPIO 分配 (M0连接器)</div>
+    <table>
+      <tr><th>Hall 信号</th><th>GPIO</th><th>连接器标注</th><th>状态</th></tr>
+      <tr><td>Hall-A</td><td class="inline-code">PB4</td><td>ENC_A</td><td class="td-good">✓ 正常</td></tr>
+      <tr><td>Hall-B</td><td class="inline-code">PB5</td><td>ENC_B</td><td class="td-good">✓ 正常</td></tr>
+      <tr><td>Hall-C</td><td class="inline-code">PC9</td><td>ENC_Z (特殊！)</td><td class="td-good">✓ 物理已确认</td></tr>
+    </table>
+    <div class="note">⚠ Hall-C 接在 PC9 而非原始文档描述的 PA15，已在 app_config.h 中修正。Hall 正向序列（d=+1）: <strong>1→3→2→6→4→5→1</strong></div>
+  </div>
+
+  <div class="section-title">⚙️ 关键运行参数（最终确认值）</div>
+  <div class="card">
+    <table>
+      <tr><th>参数</th><th>定义位置</th><th>最终值</th><th>说明</th></tr>
+      <tr><td>APP_HALL_MOTOR_DIR</td><td class="inline-code">app_config.h</td><td class="td-good">1</td><td>电机正转方向</td></tr>
+      <tr><td>APP_HALL_PHASE_OFFSET</td><td class="inline-code">app_config.h</td><td class="td-good">3.5f</td><td>Hall扇区到FOC相位偏移（count，0.5f旧值差180°）</td></tr>
+      <tr><td>APP_HALL_PLL_BANDWIDTH</td><td class="inline-code">app_config.h</td><td class="td-good">200.0f rad/s</td><td>Hall PLL 带宽</td></tr>
+      <tr><td>APP_WHEEL_RADIUS_M</td><td class="inline-code">app_config.h</td><td>0.025f m</td><td>km/h↔rad/s换算半径</td></tr>
+      <tr><td>VEL_GAIN</td><td class="inline-code">app_config.h</td><td>0.01f A/(cnt/s)</td><td>速度环P增益</td></tr>
+      <tr><td>VEL_INTEGRATOR_GAIN</td><td class="inline-code">app_config.h</td><td>0.002f</td><td>速度环I增益</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TAB: 流程图 -->
+<div id="tab-flow" class="tab-content">
+
+  <div class="section-title">🔄 motor_thread 主状态机</div>
+  <div class="card">
+    <div style="overflow-x:auto">
+    <div class="flow" style="min-width:300px">
+      <div class="flow-node fn-start">motor_thread 启动</div>
+      <div class="arrow-v"></div>
+      <div class="flow-node fn-proc">分配 anticogging map<br>设置 thread_ready = true</div>
+      <div class="arrow-v"></div>
+      <div class="flow-node fn-cond"><span>do_calibration == false?</span></div>
+      <div style="display:flex;align-items:flex-start;gap:40px">
+        <div class="flow" style="align-items:flex-end">
+          <div style="display:flex;gap:4px;align-items:center"><div style="color:var(--green);font-size:11px;font-weight:700">YES</div></div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-proc">motor_calibration()<br>R/L测量 + Hall GPIO初始化<br>PLL增益计算</div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-action">do_calibration = true<br>calibration_ok = true</div>
+        </div>
+        <div style="color:var(--text2);font-size:11px;padding-top:8px">NO →<br>跳过</div>
+      </div>
+      <div class="arrow-v"></div>
+      <div class="flow-node fn-cond"><span>calibration_ok AND enable_control?</span></div>
+      <div style="display:flex;align-items:flex-start;gap:40px">
+        <div class="flow" style="align-items:flex-end">
+          <div style="display:flex;gap:4px;align-items:center"><div style="color:var(--green);font-size:11px;font-weight:700">YES</div></div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-action">MOE_ENABLE（PWM输出使能）</div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-new">osSignalWait(0) 清积压ADC信号 ⬅ NEW</div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-proc">control_motor_loop()</div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-action">MOE_DISABLE（PWM关闭）</div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-cond"><span>enable_control 仍为 true?</span></div>
+          <div style="display:flex;gap:20px">
+            <div class="flow">
+              <div style="font-size:11px;color:var(--red);font-weight:700">YES=内部出错</div>
+              <div class="arrow-v"></div>
+              <div class="flow-node fn-err">calibration_ok = false<br>enable_control = false</div>
+            </div>
+            <div class="flow">
+              <div style="font-size:11px;color:var(--green);font-weight:700">NO=H命令停止</div>
+              <div class="arrow-v"></div>
+              <div class="flow-node fn-action">正常退出</div>
+            </div>
+          </div>
+        </div>
+        <div style="color:var(--text2);font-size:11px;padding-top:8px">NO → 等待</div>
+      </div>
+      <div class="arrow-v"></div>
+      <div class="flow-node fn-proc">queue_voltage(0,0)<br>osDelay(10ms) ⬅ 原100ms</div>
+      <div class="arrow-v"></div>
+      <div style="font-size:11px;color:var(--text2)">↩ 循环</div>
+    </div>
+    </div>
+  </div>
+
+  <div class="section-title">⚡ control_motor_loop 控制环</div>
+  <div class="card">
+    <div style="overflow-x:auto">
+    <div class="flow" style="min-width:280px">
+      <div class="flow-node fn-start">while(enable_control)</div>
+      <div class="arrow-v"></div>
+      <div class="flow-node fn-proc">osSignalWait(ADC信号, 2ms)</div>
+      <div class="arrow-v"></div>
+      <div class="flow-node fn-cond"><span>信号到达?</span></div>
+      <div style="display:flex;gap:60px">
+        <div class="flow">
+          <div style="font-size:11px;color:var(--green);font-weight:700">YES</div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-proc">do_checks()<br>DRV故障 / 欠压检测</div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-proc">loop_updates() → update_rotor()<br>读Hall GPIO → PLL更新 → phase计算</div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-proc">速度PID<br>vel_err = vel_setpoint - get_pll_vel()<br>Iq += vel_gain × vel_err + integrator</div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-proc">FOC_current()<br>Park变换 → PI控制 → SVPWM</div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-cond"><span>check_timing &lt; deadline?</span></div>
+          <div style="display:flex;gap:20px">
+            <div class="flow">
+              <div style="font-size:11px;color:var(--green);font-weight:700">YES</div>
+              <div class="arrow-v"></div>
+              <div class="flow-node fn-action">update_brake_current()</div>
+              <div class="arrow-v"></div>
+              <div style="font-size:11px;color:var(--text2)">↩ 下一周期</div>
+            </div>
+            <div class="flow">
+              <div style="font-size:11px;color:var(--red);font-weight:700">NO</div>
+              <div class="arrow-v"></div>
+              <div class="flow-node fn-err">error=ERROR_FOC_TIMING(11)<br>return false → 退出</div>
+            </div>
+          </div>
+        </div>
+        <div class="flow">
+          <div style="font-size:11px;color:var(--red);font-weight:700">TIMEOUT</div>
+          <div class="arrow-v"></div>
+          <div class="flow-node fn-err">error=ERROR_FOC_MEASUREMENT_TIMEOUT(12)</div>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <div class="section-title">🔃 H→V 重启流程对比</div>
+  <div class="flow-2col">
+    <div class="card" style="border-color:var(--red)">
+      <div class="card-title" style="color:var(--red)">❌ 修复前（旧逻辑）</div>
+      <div class="flow">
+        <div class="flow-node fn-proc">$M0,H,0;</div><div class="arrow-v"></div>
+        <div class="flow-node fn-action">enable_control = false</div><div class="arrow-v"></div>
+        <div class="flow-node fn-warn">ADC IRQ继续触发→积累信号</div><div class="arrow-v"></div>
+        <div style="font-size:11px;color:var(--text2)">(等待100ms...)</div><div class="arrow-v"></div>
+        <div class="flow-node fn-proc">$M0,V,5;</div><div class="arrow-v"></div>
+        <div class="flow-node fn-action">enable_control = true</div><div class="arrow-v"></div>
+        <div class="flow-node fn-err">osSignalWait → 立刻返回（积压）</div><div class="arrow-v"></div>
+        <div class="flow-node fn-err">check_timing 读到随机CNT</div><div class="arrow-v"></div>
+        <div class="flow-node fn-err">timing > deadline</div><div class="arrow-v"></div>
+        <div class="flow-node fn-err">ERROR_FOC_TIMING (11)</div><div class="arrow-v"></div>
+        <div class="flow-node fn-err">calibration_ok = false</div><div class="arrow-v"></div>
+        <div class="flow-node fn-err">再发$M0,V → 无效</div><div class="arrow-v"></div>
+        <div class="flow-node fn-err">必须 $M0,E,0 !</div>
+      </div>
+    </div>
+    <div class="card" style="border-color:var(--green)">
+      <div class="card-title" style="color:var(--green)">✅ 修复后（新逻辑）</div>
+      <div class="flow">
+        <div class="flow-node fn-proc">$M0,H,0;</div><div class="arrow-v"></div>
+        <div class="flow-node fn-new">enable_control=false<br>vel_integrator=0<br>hall_gpio_init() 重播种PLL</div><div class="arrow-v"></div>
+        <div style="font-size:11px;color:var(--text2)">(等待10ms...)</div><div class="arrow-v"></div>
+        <div class="flow-node fn-proc">$M0,V,5;</div><div class="arrow-v"></div>
+        <div class="flow-node fn-cond"><span>calibration_ok?</span></div>
+        <div style="display:flex;gap:16px">
+          <div class="flow">
+            <div style="font-size:10px;color:var(--green)">YES (H停的)</div>
+            <div class="arrow-v"></div>
+            <div class="flow-node fn-new">enable_control=true<br>直接重启</div>
+          </div>
+          <div class="flow">
+            <div style="font-size:10px;color:var(--yellow)">NO (出错了)</div>
+            <div class="arrow-v"></div>
+            <div class="flow-node fn-new">error=0<br>do_calibration=false<br>触发重新标定</div>
+          </div>
+        </div>
+        <div class="arrow-v"></div>
+        <div class="flow-node fn-new">osSignalWait(0) 清积压信号</div><div class="arrow-v"></div>
+        <div class="flow-node fn-new">等待真实ADC中断</div><div class="arrow-v"></div>
+        <div class="flow-node fn-action">check_timing → 正确时序 ✓</div><div class="arrow-v"></div>
+        <div class="flow-node fn-action" style="border-color:var(--green);color:var(--green)">正常运行 ✓</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">🧭 Hall → FOC 相位计算路径</div>
+  <div class="card">
+    <div class="flow">
+      <div class="flow-node fn-proc">读 GPIO IDR<br>Hall-A(PB4) | Hall-B(PB5)&lt;&lt;1 | Hall-C(PC9)&lt;&lt;2</div>
+      <div class="arrow-v"></div>
+      <div class="flow-node fn-proc">decode_hall(hall_state, &amp;hall_cnt)<br>1→0, 3→1, 2→2, 6→3, 4→4, 5→5</div>
+      <div class="arrow-v"></div>
+      <div class="flow-node fn-proc">delta = hall_cnt - count_in_cpr (wrapped ±3)<br>shadow_count += delta<br>count_in_cpr = shadow_count % 6</div>
+      <div class="arrow-v"></div>
+      <div class="flow-node fn-proc">PLL 更新 (counts/s 空间)<br>pll_pos += dt × pll_vel<br>pll_pos += dt × kp × (shadow_count - pll_pos)<br>pll_vel += dt × ki × (shadow_count - pll_pos)</div>
+      <div class="arrow-v"></div>
+      <div class="flow-node fn-new">hall_phase_from_pos(hall, pll_pos)<br>wrapped_pos = pll_pos mod 6<br>corrected = wrapped_pos - phase_offset(3.5f)<br>phase = wrap_pm_pi( (2π/6) × corrected × motor_dir )</div>
+      <div class="arrow-v"></div>
+      <div class="flow-node fn-proc">FOC park变换使用 hall-&gt;phase<br>Id_ref=0, Iq_ref=vel_PID输出</div>
+    </div>
+    <div class="note" style="margin-top:14px">
+      <strong>速度反馈 get_pll_vel()</strong> 返回 <strong>机械 rad/s</strong>：<br>
+      <code style="color:var(--teal)">pll_vel × (2π/6) / pole_pairs × motor_dir</code><br>
+      与 $M0,V 指令单位（km/h → 机械 rad/s）一致。
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TAB: 修改记录 -->
+<div id="tab-changes" class="tab-content">
+
+  <div class="change-card fix">
+    <div class="change-header">
+      <span class="change-tag tag-fix">FIX 1</span>
+      <strong>Hall-C GPIO 引脚修正</strong>
+      <span class="change-file">Inc/app_config.h</span>
+    </div>
+    <p style="color:var(--text2);font-size:12px;margin-bottom:10px">物理接线确认 Hall-C 在 PC9，原代码用 PA15 (ENC_Z默认)，导致Hall状态完全错误。</p>
+    <div class="diff-wrap">
+      <div class="diff-before">
+        <div class="diff-label">Before</div>
+        <div class="code-block code-old"><span class="hl-del">#define APP_HALL_C_PORT  GPIOA</span>
+<span class="hl-del">#define APP_HALL_C_PIN   GPIO_PIN_15</span></div>
+      </div>
+      <div class="diff-after">
+        <div class="diff-label">After</div>
+        <div class="code-block code-new"><span class="hl-add">#define APP_HALL_C_PORT  GPIOC</span>
+<span class="hl-add">#define APP_HALL_C_PIN   GPIO_PIN_9  /* PC9 */</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="change-card fix">
+    <div class="change-header">
+      <span class="change-tag tag-fix">FIX 2</span>
+      <strong>phase_offset 类型修正 int32 → float</strong>
+      <span class="change-file">MotorControl/low_level.h + app_config.h</span>
+    </div>
+    <p style="color:var(--text2);font-size:12px;margin-bottom:10px">phase_offset 声明为 int32_t，导致 0.5f 被截断为 0，实际偏移永远为0。</p>
+    <div class="diff-wrap">
+      <div class="diff-before">
+        <div class="diff-label">low_level.h — Before</div>
+        <div class="code-block code-old"><span class="hl-type">int32_t</span> phase_offset;</div>
+      </div>
+      <div class="diff-after">
+        <div class="diff-label">low_level.h — After</div>
+        <div class="code-block code-new"><span class="hl-type">float</span> phase_offset; <span class="hl-cmt">// fractional sector OK</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="change-card fix">
+    <div class="change-header">
+      <span class="change-tag tag-fix">FIX 3</span>
+      <strong>相位偏移值修正 0.5f → 3.5f（修正 180° 方向反转）</strong>
+      <span class="change-file">Inc/app_config.h</span>
+    </div>
+    <p style="color:var(--text2);font-size:12px;margin-bottom:10px">
+      0.5f 时 FOC 相位估计比实际转子角差 180°，正Iq产生最大反向力矩 → 飞车。
+      3.5f = 0.5f + 3count = 0.5f + 180° 电气角，修正对齐。
+    </p>
+    <div class="diff-wrap">
+      <div class="diff-before">
+        <div class="diff-label">Before（飞车）</div>
+        <div class="code-block code-old"><span class="hl-del">#define APP_HALL_MOTOR_DIR     1</span>
+<span class="hl-del">#define APP_HALL_PHASE_OFFSET  0.5f</span></div>
+      </div>
+      <div class="diff-after">
+        <div class="diff-label">After（正常）</div>
+        <div class="code-block code-new"><span class="hl-add">#define APP_HALL_MOTOR_DIR     1</span>
+<span class="hl-add">#define APP_HALL_PHASE_OFFSET  3.5f  /* +3 cnt = +180° */</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="change-card fix">
+    <div class="change-header">
+      <span class="change-tag tag-fix">FIX 4</span>
+      <strong>速度反馈单位修正：电气 rad/s → 机械 rad/s</strong>
+      <span class="change-file">MotorControl/low_level.c → get_pll_vel()</span>
+    </div>
+    <p style="color:var(--text2);font-size:12px;margin-bottom:10px">
+      $M0,V 指令单位是<strong>机械 rad/s</strong>，原 get_pll_vel() 返回的是<strong>电气 rad/s（×7倍）</strong>。
+      速度误差 v_err = setpoint - feedback 相差7倍，速度环完全失控。
+    </p>
+    <div class="diff-wrap">
+      <div class="diff-before">
+        <div class="diff-label">Before（单位错误）</div>
+        <div class="code-block code-old"><span class="hl-kw">return</span> hall-&gt;pll_vel
+    * (<span class="hl-num">2.0f</span> * M_PI / <span class="hl-num">6.0f</span>)
+    * (<span class="hl-type">float</span>)hall-&gt;motor_dir;
+<span class="hl-cmt">// 返回电气 rad/s (机械×7)</span></div>
+      </div>
+      <div class="diff-after">
+        <div class="diff-label">After（单位正确）</div>
+        <div class="code-block code-new"><span class="hl-kw">return</span> hall-&gt;pll_vel
+    * (<span class="hl-num">2.0f</span> * M_PI / <span class="hl-num">6.0f</span>)
+    / (<span class="hl-type">float</span>)motor-&gt;pole_pairs   <span class="hl-cmt">// ÷7</span>
+    * (<span class="hl-type">float</span>)hall-&gt;motor_dir;
+<span class="hl-cmt">// 返回机械 rad/s ✓</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="change-card fix">
+    <div class="change-header">
+      <span class="change-tag tag-fix">FIX 5</span>
+      <strong>H 命令停机后重启时 ERROR_FOC_TIMING 修复</strong>
+      <span class="change-file">MotorControl/low_level.c + commands.c</span>
+    </div>
+    <p style="color:var(--text2);font-size:12px;margin-bottom:10px">
+      H 停机后 PWM输出关闭但 TIM1→ADC 触发链仍运行，ADC IRQ 持续 osSignalSet。
+      再次启动时 osSignalWait 立刻返回积压信号 → check_timing 读到随机CNT → timing > deadline → ERROR_FOC_TIMING。
+    </p>
+    <div class="diff-wrap">
+      <div class="diff-before">
+        <div class="diff-label">low_level.c motor_thread — Before</div>
+        <div class="code-block code-old"><span class="hl-macro">__HAL_TIM_MOE_ENABLE</span>(motor-&gt;motor_timer);
+
+<span class="hl-type">bool</span> spin_up_ok = <span class="hl-kw">true</span>;</div>
+      </div>
+      <div class="diff-after">
+        <div class="diff-label">low_level.c motor_thread — After</div>
+        <div class="code-block code-new"><span class="hl-macro">__HAL_TIM_MOE_ENABLE</span>(motor-&gt;motor_timer);
+
+<span class="hl-cmt">// 清掉停机期间积压的 ADC 信号</span>
+<span class="hl-fn">osSignalWait</span>(M_SIGNAL_PH_CURRENT_MEAS, <span class="hl-num">0</span>);
+
+<span class="hl-type">bool</span> spin_up_ok = <span class="hl-kw">true</span>;</div>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+    <div class="diff-wrap">
+      <div class="diff-before">
+        <div class="diff-label">commands.c H 命令 — Before</div>
+        <div class="code-block code-old">mot-&gt;enable_control = <span class="hl-kw">false</span>;
+mot-&gt;vel_setpoint   = <span class="hl-num">0.0f</span>;
+mot-&gt;current_setpoint = <span class="hl-num">0.0f</span>;</div>
+      </div>
+      <div class="diff-after">
+        <div class="diff-label">commands.c H 命令 — After</div>
+        <div class="code-block code-new">mot-&gt;enable_control = <span class="hl-kw">false</span>;
+mot-&gt;vel_setpoint   = <span class="hl-num">0.0f</span>;
+mot-&gt;current_setpoint = <span class="hl-num">0.0f</span>;
+<span class="hl-cmt">// 重置积分防重启电流尖峰</span>
+mot-&gt;vel_integrator_current = <span class="hl-num">0.0f</span>;
+<span class="hl-kw">if</span> (mot-&gt;rotor_mode == ROTOR_MODE_HALL)
+    <span class="hl-fn">hall_gpio_init</span>(mot); <span class="hl-cmt">// 重播种PLL</span></div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <div class="change-card fix">
+    <div class="change-header">
+      <span class="change-tag tag-fix">FIX 6</span>
+      <strong>V 命令出错后自动恢复（无需 $M0,E,0）</strong>
+      <span class="change-file">MotorControl/commands.c → case 'V'</span>
+    </div>
+    <p style="color:var(--text2);font-size:12px;margin-bottom:10px">
+      出错后 motor_thread 将 calibration_ok=false，原 V 命令判断
+      <span class="inline-code">calibration_ok &amp;&amp; !enable_control</span> 不满足 → 永久无法重启。
+    </p>
+    <div class="diff-wrap">
+      <div class="diff-before">
+        <div class="diff-label">Before</div>
+        <div class="code-block code-old"><span class="hl-kw">if</span> (mot-&gt;calibration_ok &amp;&amp; !mot-&gt;enable_control) {
+    mot-&gt;enable_control = <span class="hl-kw">true</span>;
+}
+<span class="hl-fn">set_vel_setpoint</span>(mot, vel_rad_s, <span class="hl-num">0.0f</span>);</div>
+      </div>
+      <div class="diff-after">
+        <div class="diff-label">After</div>
+        <div class="code-block code-new"><span class="hl-kw">if</span> (mot-&gt;calibration_ok &amp;&amp; !mot-&gt;enable_control) {
+    <span class="hl-cmt">// H命令停机：直接重启</span>
+    mot-&gt;enable_control = <span class="hl-kw">true</span>;
+} <span class="hl-kw">else if</span> (!mot-&gt;calibration_ok) {
+    <span class="hl-cmt">// 出错后：重置+重新标定</span>
+    mot-&gt;error          = ERROR_NO_ERROR;
+    mot-&gt;do_calibration = <span class="hl-kw">false</span>; <span class="hl-cmt">// 触发再标定</span>
+    mot-&gt;enable_control = <span class="hl-kw">true</span>;
+}
+<span class="hl-fn">set_vel_setpoint</span>(mot, vel_rad_s, <span class="hl-num">0.0f</span>);</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="change-card perf">
+    <div class="change-header">
+      <span class="change-tag tag-perf">PERF</span>
+      <strong>motor_thread 轮询间隔 100ms → 10ms</strong>
+      <span class="change-file">MotorControl/low_level.c → motor_thread</span>
+    </div>
+    <p style="color:var(--text2);font-size:12px">V 命令触发后最长等待时间从 100ms 降至 10ms，响应更快。</p>
+    <div class="diff-wrap">
+      <div class="diff-before"><div class="diff-label">Before</div>
+        <div class="code-block code-old"><span class="hl-fn">osDelay</span>(<span class="hl-num">100</span>);</div></div>
+      <div class="diff-after"><div class="diff-label">After</div>
+        <div class="code-block code-new"><span class="hl-fn">osDelay</span>(<span class="hl-num">10</span>);  <span class="hl-cmt">// 原100ms</span></div></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TAB: Bug根因分析 -->
+<div id="tab-bugs" class="tab-content">
+
+  <div class="section-title">🐛 Bug 根因分析详情</div>
+
+  <div class="card" style="border-color:var(--red)">
+    <div class="card-title"><span class="dot dot-red"></span>BUG-1：飞车（vel ≈ −211 rad/s, Iq ≈ 51A, err=23）</div>
+    <div class="timeline">
+      <div class="tl-item"><div class="tl-dot red"></div>
+        <div class="tl-title">根因：相位偏移 0.5f（电气 30°）使 FOC 相位比转子实际角差 180°</div>
+        <div class="tl-desc">
+          Hall CPR=6，每格 60° 电气角。<br>
+          <code class="inline-code">phase = (pll_pos − offset) × (2π/6) × dir</code><br>
+          offset=0.5 → phase 误差 ≈ 0°（实际上 dir=1 时需要补偿的相位与磁场方向对不上）。
+        </div>
+      </div>
+      <div class="tl-item"><div class="tl-dot red"></div>
+        <div class="tl-title">效果：正 Iq 产生最大负向力矩</div>
+        <div class="tl-desc">
+          FOC 的输出力矩 ∝ sin(相位误差)。<br>
+          误差 = 180° → sin(180°) = 0 → 但电流积分器积分 → 最终达到限流值，电机向反方向以最大加速度飞转。
+        </div>
+      </div>
+      <div class="tl-item"><div class="tl-dot green"></div>
+        <div class="tl-title">修复：offset 改为 3.5f（= 0.5 + 3 count = 原来 + 180°）</div>
+        <div class="tl-desc">加 3 个 Hall count = 加 3×60° = 加 180°，恰好补偿方向反转，Iq 与磁场对齐。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="border-color:var(--yellow)">
+    <div class="card-title"><span class="dot dot-yellow"></span>BUG-2：速度控制误差 7×（$M0,V,5 实际只跑 ~0.7 倍速）</div>
+    <div class="timeline">
+      <div class="tl-item"><div class="tl-dot yellow"></div>
+        <div class="tl-title">根因：电气速度 vs 机械速度单位不匹配</div>
+        <div class="tl-desc">
+          Hall PLL velocity 单位是 counts/s（6 counts = 1 电气转）<br>
+          get_pll_vel() 只转换到<strong>电气 rad/s</strong> = counts/s × 2π/6<br>
+          $M0,V 指令换算到<strong>机械 rad/s</strong> = km/h / 3.6 / wheel_radius<br>
+          两者差 pole_pairs = 7 倍。
+        </div>
+      </div>
+      <div class="tl-item"><div class="tl-dot green"></div>
+        <div class="tl-title">修复：get_pll_vel() 除以 pole_pairs</div>
+        <div class="tl-desc">
+          <code class="inline-code">pll_vel × (2π/6) / pole_pairs × motor_dir</code> → 机械 rad/s
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="border-color:var(--red)">
+    <div class="card-title"><span class="dot dot-red"></span>BUG-3/4/5：H → V 无法重启（必须 $M0,E,0）</div>
+    <div class="timeline">
+      <div class="tl-item"><div class="tl-dot red"></div>
+        <div class="tl-title">根因A：积压的 ADC 信号导致 ERROR_FOC_TIMING(11)</div>
+        <div class="tl-desc">
+          H 命令关闭 PWM 输出，但 TIM1 计时器继续运行，ADC 注入触发仍然有效。<br>
+          pwm_trig_adc_cb() 每 ~100µs 调用一次 osSignalSet()，FreeRTOS 信号位持续置 1。<br>
+          V 命令重启后第一次 osSignalWait() 立刻返回（不等真实 ADC 采样沿），<br>
+          check_timing 读到随机 TIM1 CNT → 可能在倒计数区间（timing = 10192 + Δ > 10192）→ ERROR_FOC_TIMING。
+        </div>
+      </div>
+      <div class="tl-item"><div class="tl-dot red"></div>
+        <div class="tl-title">根因B：出错后 motor_thread 清除 calibration_ok</div>
+        <div class="tl-desc">
+          任何错误退出 control_motor_loop 时：<br>
+          <code class="inline-code">if (enable_control) { calibration_ok = false; enable_control = false; }</code><br>
+          V 命令检查 <code class="inline-code">calibration_ok &amp;&amp; !enable_control</code> → false → 永不重启。
+        </div>
+      </div>
+      <div class="tl-item"><div class="tl-dot red"></div>
+        <div class="tl-title">根因C：H 停机后 Hall PLL 状态未重置</div>
+        <div class="tl-desc">
+          滑行期间 update_rotor 不运行，但 shadow_count 和 pll_pos 保持停机前的值。<br>
+          重启时 Hall 位置与 PLL 估计不一致 → 速度估计出现大误差 → 电流尖峰。
+        </div>
+      </div>
+      <div class="tl-item"><div class="tl-dot green"></div>
+        <div class="tl-title">修复A：osSignalWait(M_SIGNAL_PH_CURRENT_MEAS, 0) 清积压</div>
+        <div class="tl-desc">在 control_motor_loop 入口、MOE_ENABLE 之后立即调用非阻塞 osSignalWait(signal, 0) 消耗积压的信号位。</div>
+      </div>
+      <div class="tl-item"><div class="tl-dot green"></div>
+        <div class="tl-title">修复B：V 命令新增 !calibration_ok 恢复分支</div>
+        <div class="tl-desc">检测到出错后，V 命令主动清 error、触发 do_calibration=false（重新标定），设 enable_control=true，无需手动 $M0,E,0。</div>
+      </div>
+      <div class="tl-item"><div class="tl-dot green"></div>
+        <div class="tl-title">修复C：H 命令调用 hall_gpio_init() 重播种 PLL</div>
+        <div class="tl-desc">停机时从当前 Hall GPIO 状态重新初始化 pll_pos 和 pll_vel，重启后第一个 update_rotor 周期的相位误差为零。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">📊 错误码参考</div>
+  <div class="card">
+    <table>
+      <tr><th>#</th><th>错误名</th><th>触发条件</th><th>常见原因</th></tr>
+      <tr><td>0</td><td class="td-good">ERROR_NO_ERROR</td><td>—</td><td>正常</td></tr>
+      <tr><td>9</td><td class="td-bad">ERROR_ADC_FAILED</td><td>ADC2/3 不是预期的</td><td>硬件问题</td></tr>
+      <tr><td>11</td><td class="td-bad">ERROR_FOC_TIMING</td><td>last_cpu_time ≥ control_deadline</td><td>CPU超时 / 积压信号导致随机CNT（已修复）</td></tr>
+      <tr><td>12</td><td class="td-bad">ERROR_FOC_MEASUREMENT_TIMEOUT</td><td>osSignalWait 2ms 超时</td><td>ADC IRQ 未触发</td></tr>
+      <tr><td>20</td><td class="td-bad">ERROR_DRV_FAULT</td><td>nFAULT GPIO 低</td><td>过流/过温/欠压 DRV8301</td></tr>
+      <tr><td>23</td><td class="td-warn">ERROR_CURRENT_LIMIT_VIOLATION</td><td>|Iq| 超软限流</td><td>飞车/相位错误时常见</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TAB: 总结 -->
+<div id="tab-summary" class="tab-content">
+
+  <div class="section-title">📋 调试总结</div>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-num stat-red">2</div><div class="stat-lbl">飞车 Bug</div></div>
+    <div class="stat-card"><div class="stat-num stat-red">1</div><div class="stat-lbl">单位错误 Bug</div></div>
+    <div class="stat-card"><div class="stat-num stat-red">3</div><div class="stat-lbl">重启逻辑 Bug</div></div>
+    <div class="stat-card"><div class="stat-num stat-green">6</div><div class="stat-lbl">全部已修复</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot dot-green"></span>修改文件汇总</div>
+    <table>
+      <tr><th>文件</th><th>修改内容</th><th>状态</th></tr>
+      <tr><td class="inline-code">Inc/app_config.h</td><td>Hall-C PIN: PA15→PC9 / MOTOR_DIR: -1→1 / PHASE_OFFSET: 0.5f→3.5f</td><td class="td-good">✓</td></tr>
+      <tr><td class="inline-code">MotorControl/low_level.h</td><td>Hall_t.phase_offset: int32_t → float</td><td class="td-good">✓</td></tr>
+      <tr><td class="inline-code">MotorControl/low_level.c</td><td>get_pll_vel()÷pole_pairs / osSignalWait(0)清信号 / osDelay 100→10ms / hall_gpio_init() / read_hall_gpio_state()新增</td><td class="td-good">✓</td></tr>
+      <tr><td class="inline-code">MotorControl/commands.c</td><td>H命令+integrator_reset+hall_gpio_init / V命令+!calib_ok恢复分支</td><td class="td-good">✓</td></tr>
+      <tr><td class="inline-code">Src/freertos.c</td><td>uart2_test_thread: 实时Hall GPIO读取/变化上报/1ms轮询</td><td class="td-good">✓</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot dot-blue"></span>当前 UART 命令说明</div>
+    <table>
+      <tr><th>命令</th><th>效果</th><th>注意</th></tr>
+      <tr><td class="inline-code">$M0,E,0;</td><td>清错误 + 重标定 + enable_control=true</td><td>上电后首次必须执行</td></tr>
+      <tr><td class="inline-code">$M0,V,5.0;</td><td>设速度 5.0 km/h（= 55.56 机械rad/s）</td><td>H停机后直接发此命令即可重启 ✓</td></tr>
+      <tr><td class="inline-code">$M0,H,0;</td><td>停机（coast），保留 calibration_ok</td><td>停机后发V可直接重启，无需E</td></tr>
+      <tr><td class="inline-code">$M0,Q,0;</td><td>查询状态</td><td>返回: [vel, pos, Iq, Vbus, err]</td></tr>
+      <tr><td class="inline-code">$M0,I,2.0;</td><td>直接电流控制 2A</td><td>慎用，无速度限制</td></tr>
+    </table>
+    <div class="note" style="margin-top:12px">
+      H 停机后流程：$M0,H,0; → $M0,V,5.0; → 直接运行（不需要 $M0,E,0）✅<br>
+      出错后流程：$M0,V,5.0; → 自动重新标定（约3-5秒）→ 自动启动 ✅
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot dot-yellow"></span>Hall FOC 调试关键经验</div>
+    <div class="timeline">
+      <div class="tl-item"><div class="tl-dot blue"></div>
+        <div class="tl-title">1. Hall 序列验证先于 FOC</div>
+        <div class="tl-desc">用 UART 实时上报 Hall 状态变化，手转电机确认序列为 1→3→2→6→4→5→1（d=+1, adj=1）再开 FOC。</div>
+      </div>
+      <div class="tl-item"><div class="tl-dot blue"></div>
+        <div class="tl-title">2. 飞车 = 相位差 180°，抖动 = 相位差 0° 或 60°</div>
+        <div class="tl-desc">飞车时 pll_vel 符号与 vel_setpoint 相反且发散；抖动（2↔6反复）时电机卡在一个扇区边界。</div>
+      </div>
+      <div class="tl-item"><div class="tl-dot blue"></div>
+        <div class="tl-title">3. phase_offset 排查方法</div>
+        <div class="tl-desc">固定 DIR=1，OFFSET 从 0.5f 步进 1.0f（每步 60°），共 6 个值。找到正转的值后确认中点是 0.5f 对齐。</div>
+      </div>
+      <div class="tl-item"><div class="tl-dot blue"></div>
+        <div class="tl-title">4. CMSIS-RTOS 没有 osSignalClear</div>
+        <div class="tl-desc">用 osSignalWait(signal, 0) 代替（非阻塞，清掉信号位）。</div>
+      </div>
+      <div class="tl-item"><div class="tl-dot blue"></div>
+        <div class="tl-title">5. 速度单位一致性</div>
+        <div class="tl-desc">Hall PLL 在"机械转"空间工作需要÷pole_pairs；encoder PLL 在 counts 空间，单位不同，不要混用。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="warn-box">
+    ⚠ <strong>出错后 V 命令自动重新标定（约3-5秒）</strong>期间，电机不动，UART 日志可查到 [HALL] 输出（标定过程中 Hall GPIO 初始化会输出）。标定完成后自动进入控制环，响应速度指令。
+  </div>
+
+</div>
+
+<script>
+function showTab(id) {
+  document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(e => e.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

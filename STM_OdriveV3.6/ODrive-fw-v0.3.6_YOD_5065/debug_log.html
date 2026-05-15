@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ODrive YOD-5065 调试记录</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --card2: #222536;
+    --border: #2e3248;
+    --accent: #4f8ef7;
+    --accent2: #a78bfa;
+    --green: #34d399;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --text: #e2e8f0;
+    --muted: #8892b0;
+    --line: #3a4060;
+    --dot-done: #34d399;
+    --dot-wip: #fbbf24;
+    --tag-bg: #1e2440;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', 'PingFang SC', sans-serif; font-size: 14px; }
+
+  /* ── Header ── */
+  header {
+    padding: 36px 48px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 22px; font-weight: 700; letter-spacing: .5px; }
+  header h1 span { color: var(--accent); }
+  .badge { background: var(--tag-bg); border: 1px solid var(--border); border-radius: 20px; padding: 4px 14px; font-size: 12px; color: var(--muted); }
+
+  /* ── Layout ── */
+  .container { display: flex; max-width: 1280px; margin: 0 auto; padding: 32px 48px; gap: 40px; }
+
+  /* ── Sidebar timeline ── */
+  .sidebar { width: 220px; flex-shrink: 0; position: sticky; top: 24px; align-self: flex-start; }
+  .sidebar h2 { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 20px; }
+  .tl-list { position: relative; list-style: none; padding-left: 20px; }
+  .tl-list::before { content:''; position:absolute; left:6px; top:6px; bottom:6px; width:2px; background: var(--line); border-radius:2px; }
+  .tl-list li { position: relative; margin-bottom: 4px; }
+  .tl-list li::before {
+    content:''; position:absolute; left:-14px; top:50%; transform:translateY(-50%);
+    width:10px; height:10px; border-radius:50%; background:var(--card);
+    border:2px solid var(--line); transition: border-color .2s, background .2s;
+  }
+  .tl-list li.active::before, .tl-list li:hover::before { border-color: var(--accent); background: var(--accent); }
+  .tl-list li a {
+    display: block; padding: 7px 10px; border-radius: 8px;
+    text-decoration: none; color: var(--muted); font-size: 13px;
+    transition: background .15s, color .15s;
+  }
+  .tl-list li.active a, .tl-list li:hover a { color: var(--text); background: var(--card2); }
+  .tl-date { font-size: 11px; color: var(--muted); display: block; margin-top: 1px; }
+
+  /* ── Main content ── */
+  .main { flex: 1; min-width: 0; }
+
+  /* ── Day card ── */
+  .day-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 28px; overflow: hidden; }
+  .day-header {
+    padding: 18px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px; cursor: pointer;
+    user-select: none; transition: background .15s;
+  }
+  .day-header:hover { background: var(--card2); }
+  .day-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .dot-done { background: var(--dot-done); box-shadow: 0 0 8px var(--dot-done); }
+  .dot-wip  { background: var(--dot-wip);  box-shadow: 0 0 8px var(--dot-wip);  }
+  .day-title { font-size: 15px; font-weight: 600; flex: 1; }
+  .day-date  { font-size: 12px; color: var(--muted); }
+  .day-toggle { color: var(--muted); font-size: 18px; transition: transform .25s; }
+  .day-card.open .day-toggle { transform: rotate(180deg); }
+  .day-body { padding: 20px 24px; display: none; }
+  .day-card.open .day-body { display: block; }
+
+  /* ── Entry list ── */
+  .entry { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .entry:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  .entry-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .entry-desc { color: var(--muted); line-height: 1.7; margin-bottom: 10px; }
+  .entry-desc strong { color: var(--text); }
+
+  /* ── Tags ── */
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag { font-size: 11px; padding: 3px 10px; border-radius: 12px; border: 1px solid; font-weight: 500; letter-spacing: .3px; }
+  .tag-fix   { color: var(--green);  border-color: #1a4030; background: #0f2a1e; }
+  .tag-cfg   { color: var(--accent); border-color: #1a2d4a; background: #0f1e35; }
+  .tag-hw    { color: var(--accent2);border-color: #2a1f4a; background: #1a1230; }
+  .tag-perf  { color: var(--yellow); border-color: #3a2a0a; background: #251a00; }
+  .tag-proto { color: #67e8f9;       border-color: #0a2a30; background: #041820; }
+
+  /* ── Code block ── */
+  pre { background: #0a0d14; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 10px 0; }
+  code { font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 12.5px; color: #a9c4f5; white-space: pre; }
+  .cmt { color: #4a5568; }
+  .kw  { color: #a78bfa; }
+  .num { color: #34d399; }
+  .str { color: #fbbf24; }
+
+  /* ── Diff block ── */
+  .diff { background: #0a0d14; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin: 10px 0; font-family: 'Cascadia Code','Consolas',monospace; font-size: 12.5px; line-height: 1.7; }
+  .diff .del { color: #f87171; background: rgba(248,113,113,.08); display: block; }
+  .diff .add { color: #34d399; background: rgba(52,211,153,.08); display: block; }
+  .diff .neu { color: var(--muted); display: block; }
+
+  /* ── Info box ── */
+  .info-box { border-radius: 8px; padding: 12px 16px; margin: 10px 0; border-left: 3px solid; font-size: 13px; line-height: 1.7; }
+  .info-box.green  { background: rgba(52,211,153,.07); border-color: var(--green);  color: var(--muted); }
+  .info-box.blue   { background: rgba(79,142,247,.07); border-color: var(--accent); color: var(--muted); }
+  .info-box.yellow { background: rgba(251,191,36,.07); border-color: var(--yellow); color: var(--muted); }
+  .info-box.red    { background: rgba(248,113,113,.07);border-color: var(--red);    color: var(--muted); }
+  .info-box strong { color: var(--text); }
+
+  /* ── Table ── */
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; background: var(--card2); color: var(--muted); font-weight: 600; letter-spacing: .3px; font-size: 11px; text-transform: uppercase; }
+  td { padding: 9px 12px; border-top: 1px solid var(--border); color: var(--muted); vertical-align: top; }
+  td strong { color: var(--text); }
+  tr:hover td { background: var(--card2); }
+
+  /* ── Responsive ── */
+  @media (max-width: 860px) {
+    .container { flex-direction: column; padding: 20px; }
+    .sidebar { width: 100%; position: static; }
+    .tl-list { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 0; }
+    .tl-list::before { display: none; }
+    .tl-list li::before { display: none; }
+    .tl-list li a { border: 1px solid var(--border); }
+    header { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>ODrive <span>YOD-5065</span> 调试记录</h1>
+    <div style="color:var(--muted);font-size:12px;margin-top:4px;">STM32F405 · 5065 270kV · Hall FOC · 双通道 M0/M1</div>
+  </div>
+  <div class="badge">v0.3.6-YOD</div>
+</header>
+
+<div class="container">
+
+  <!-- ── Sidebar ── -->
+  <nav class="sidebar">
+    <h2>时间轴</h2>
+    <ul class="tl-list" id="tl">
+      <li class="active"><a href="#d0515" onclick="nav(this)">
+        2025-05-15 <span class="tl-date">M0/M1 双通道对齐 · 方向 · 噪声</span>
+      </a></li>
+      <li><a href="#d0514" onclick="nav(this)">
+        2025-05-14 <span class="tl-date">M1 通道上线 · Hall GPIO · UART 协议</span>
+      </a></li>
+      <li><a href="#d0513" onclick="nav(this)">
+        2025-05-13 <span class="tl-date">M0 Hall FOC 调试 · 校准时序修复</span>
+      </a></li>
+    </ul>
+  </nav>
+
+  <!-- ── Main ── -->
+  <main class="main">
+
+    <!-- ════════════════ 2025-05-15 ════════════════ -->
+    <section id="d0515">
+      <div class="day-card open">
+        <div class="day-header" onclick="toggle(this)">
+          <span class="day-dot dot-done"></span>
+          <span class="day-title">2025-05-15 &nbsp;·&nbsp; M0/M1 行为对齐、方向修正、噪声优化</span>
+          <span class="day-date">2025-05-15</span>
+          <span class="day-toggle">▾</span>
+        </div>
+        <div class="day-body">
+
+          <!-- 1 -->
+          <div class="entry">
+            <div class="entry-title">① 双命令同帧解析（Multi-command UART frame）</div>
+            <div class="entry-desc">
+              <strong>问题：</strong>同时发送 <code>$M0,V,5.0;$M1,V,5.0;</code>，板子只响应 M0，M1 丢失或延迟。<br>
+              <strong>根因：</strong>原解析器仅识别 <code>\r/\n/!</code> 为帧结束符，<code>;</code> 当普通字符存入 buffer；sscanf 只解析第一条命令，剩余内容丢弃。<br>
+              <strong>修复：</strong>把 <code>;</code> 也作为帧结束符，处理后 <em>不退出</em> while 循环，继续消耗 DMA buffer 中的后续字节。
+            </div>
+            <div class="diff">
+<span class="neu">// commands.c – cmd_parse_thread, inner while loop</span>
+<span class="del">-   if (c == '\r' || c == '\n' || c == '!') {</span>
+<span class="del">-       parse_buffer[parse_buffer_idx-1] = '\0';</span>
+<span class="del">-       motor_parse_cmd(...);</span>
+<span class="del">-       reset_read_state = true;</span>
+<span class="del">-       break;</span>
+<span class="add">+   if (c == ';') {</span>
+<span class="add">+       // 处理当前命令，重置 parse_state，但不 break</span>
+<span class="add">+       // → 同一 DMA 帧里的下一条命令继续被解析</span>
+<span class="add">+       motor_parse_cmd(...); parse_buffer_idx = 0; read_active = false;</span>
+<span class="add">+   } else if (c == '\r' || c == '\n' || c == '!') {</span>
+<span class="add">+       motor_parse_cmd(...); reset_read_state = true; break;</span>
+            </div>
+            <div class="info-box blue">
+              <strong>支持的发送格式：</strong><br>
+              <code>$M0,V,5.0;$M1,V,5.0;</code> ← 两条命令同帧，均执行<br>
+              <code>$M0,H,0;$M1,H,0;$M0,V,3.0;</code> ← 三条命令，均执行<br>
+              旧格式 <code>$M0,V,5.0\n</code> 继续有效
+            </div>
+            <div class="tags"><span class="tag tag-fix">Bug Fix</span><span class="tag tag-proto">UART Protocol</span></div>
+          </div>
+
+          <!-- 2 -->
+          <div class="entry">
+            <div class="entry-title">② 积分增益回调降噪</div>
+            <div class="entry-desc">
+              <strong>问题：</strong>电机运行时出现轻微抖动（前两版没有）。<br>
+              <strong>根因：</strong>上次将 <code>vel_gain</code> 从 0.01 提升到 0.02，Hall CPR=6 每个 sector 边沿触发一次 <code>pll_vel</code> 修正脉冲，高积分增益放大 6 velocity samples/rev 的量化噪声。<br>
+              <strong>修复：</strong>积分增益从 0.04 调回 0.01，P 项（0.02）仍提供充足动态响应。
+            </div>
+            <div class="diff">
+<span class="del">- #define APP_VEL_INTEGRATOR_GAIN  0.04f   // [A/(rad/s·s)]</span>
+<span class="add">+ #define APP_VEL_INTEGRATOR_GAIN  0.01f   // reduced: CPR=6 量化噪声抑制</span>
+            </div>
+            <div class="tags"><span class="tag tag-perf">Tuning</span><span class="tag tag-fix">Noise Fix</span></div>
+          </div>
+
+          <!-- 3 -->
+          <div class="entry">
+            <div class="entry-title">③ M0 方向反转（正确方式）</div>
+            <div class="entry-desc">
+              <strong>问题：</strong>M0 电机运转方向与预期相反。<br>
+              <strong>错误尝试：</strong>将 <code>APP_HALL_MOTOR_DIR</code> 从 1 改为 -1 → M0 出现剧烈抖动+噪声，M1 正常。<br>
+              <strong>根因分析：</strong>
+            </div>
+            <div class="info-box red">
+              <strong>motor_dir 是 FOC 校准参数，同时影响两处：</strong><br>
+              • <code>hall_phase_from_pos()</code>：<code>phase = (2π/6)×(pos−3.5)×motor_dir</code>  定子磁场角度<br>
+              • <code>get_pll_vel()</code>：速度反馈符号<br><br>
+              <code>phase_offset=3.5</code> 是针对 <code>motor_dir=1</code> 校准的。改成 -1 后相位角约偏移 120°~180°，
+              FOC 磁场方向错误 → 抖动噪声。<strong>绝不能通过修改 motor_dir 来反转应用层方向。</strong>
+            </div>
+            <div class="entry-desc">
+              <strong>正确修复：</strong>在指令层（commands.c V handler）做符号翻转，FOC 校准参数不动。
+            </div>
+            <div class="diff">
+<span class="neu">// app_config.h</span>
+<span class="del">- #define APP_HALL_MOTOR_DIR     -1   // 错误：破坏 FOC 校准</span>
+<span class="add">+ #define APP_HALL_MOTOR_DIR      1   // FOC 校准值，勿动</span>
+<span class="add">+ #define APP_M0_VEL_DIRECTION  (-1)  // 应用层：M0 输出方向取反</span>
+<span class="add">+ #define APP_M1_VEL_DIRECTION    1   // 应用层：M1 正向</span>
+<span class="neu"></span>
+<span class="neu">// commands.c – V handler</span>
+<span class="add">+ static const int8_t app_dir[2] = { APP_M0_VEL_DIRECTION, APP_M1_VEL_DIRECTION };</span>
+<span class="add">+ vel_rad_s *= (float)app_dir[motor_idx];  // 指令层翻转，不影响 FOC</span>
+            </div>
+            <div class="info-box green">
+              <strong>结论：</strong>M0 输出方向翻转成功，FOC 校准不受影响，M0/M1 均无噪声。
+              如需再次翻转方向，只需修改 <code>APP_M0_VEL_DIRECTION</code>（值 1 或 -1）。
+            </div>
+            <div class="tags"><span class="tag tag-cfg">Config</span><span class="tag tag-fix">Direction Fix</span></div>
+          </div>
+
+          <!-- 4 -->
+          <div class="entry">
+            <div class="entry-title">④ M1 启动慢 → 主动制动 H 命令修复</div>
+            <div class="entry-desc">
+              <strong>问题A（启动慢）：</strong>"前面不动→开始缓慢加速"，M0 实时响应而 M1 不行。<br>
+              根因：vel_gain=0.01 在 5 km/h 误差下 P 项仅 0.556 A，低于 5065 静摩擦；积分器旧值 0.002 需 13 秒才能达 2A。<br>
+              <strong>问题B（H 命令）：</strong>"减速有时停有时变慢转速"。根因：H 直接切 PWM，空载电机自由滑行数秒。
+            </div>
+            <table>
+              <tr><th>修复项</th><th>旧值</th><th>新值</th><th>效果</th></tr>
+              <tr><td><strong>vel_gain</strong></td><td>0.01</td><td><strong>0.02</strong></td><td>P 项 1.11A，立即启动</td></tr>
+              <tr><td><strong>vel_integrator_gain</strong></td><td>0.002</td><td><strong>0.04→0.01</strong></td><td>0.4 s 达 2A，再调低噪声</td></tr>
+              <tr><td><strong>APP_HALL_STARTUP_CURRENT</strong></td><td>—</td><td><strong>2.0 A</strong></td><td>启动前馈，第一个 FOC 周期即可克服静摩擦</td></tr>
+              <tr><td><strong>H 命令</strong></td><td>enable_control=false（自由滑行）</td><td><strong>vel_setpoint=0 + 4096 tick 主动制动</strong></td><td>500 ms 内主动减速停止</td></tr>
+              <tr><td><strong>V 命令</strong></td><td>—</td><td><strong>halt_timeout=-1 取消制动</strong></td><td>H 后立即 V 可即时响应</td></tr>
+            </table>
+            <div class="tags"><span class="tag tag-fix">Bug Fix</span><span class="tag tag-perf">Startup</span><span class="tag tag-proto">Command</span></div>
+          </div>
+
+        </div><!-- day-body -->
+      </div><!-- day-card -->
+    </section>
+
+    <!-- ════════════════ 2025-05-14 ════════════════ -->
+    <section id="d0514">
+      <div class="day-card open">
+        <div class="day-header" onclick="toggle(this)">
+          <span class="day-dot dot-done"></span>
+          <span class="day-title">2025-05-14 &nbsp;·&nbsp; M1 通道上线 · Hall GPIO · UART $ST 协议</span>
+          <span class="day-date">2025-05-14</span>
+          <span class="day-toggle">▾</span>
+        </div>
+        <div class="day-body">
+
+          <!-- 1 -->
+          <div class="entry">
+            <div class="entry-title">① M1 Hall GPIO 引脚重映射</div>
+            <div class="entry-desc">
+              M1 原 Hall-C 用 PB3（ENC_Z），与 SWO 复用冲突。改为 PC15（M1_DC_CAL 复用为输入）。
+            </div>
+            <div class="diff">
+<span class="neu">// main.h</span>
+<span class="del">- #define M1_ENC_Z_Pin        GPIO_PIN_3</span>
+<span class="del">- #define M1_ENC_Z_GPIO_Port  GPIOB</span>
+<span class="add">+ #define M1_ENC_Z_Pin        GPIO_PIN_15</span>
+<span class="add">+ #define M1_ENC_Z_GPIO_Port  GPIOC</span>
+            </div>
+            <div class="info-box yellow">
+              <strong>注意：</strong>PC15 与 M0_ENC_Z（PC9）共享 EXTI15_10 中断线。
+              Hall 检测不依赖 EXTI（轮询模式），因此不影响功能。
+            </div>
+            <div class="tags"><span class="tag tag-hw">Hardware</span><span class="tag tag-cfg">GPIO</span></div>
+          </div>
+
+          <!-- 2 -->
+          <div class="entry">
+            <div class="entry-title">② M1 Hall 初始化宏与电机参数</div>
+            <div class="entry-desc">
+              在 <code>app_config.h</code> 添加 M1 专用 Hall 宏，并在 <code>low_level.c</code> 的 motors[1] 初始化器中引用。
+            </div>
+            <pre><code><span class="kw">#define</span> APP_M1_HALL_A_PORT   GPIOB
+<span class="kw">#define</span> APP_M1_HALL_A_PIN    GPIO_PIN_6   <span class="cmt">// PB6 = M1_ENC_A</span>
+<span class="kw">#define</span> APP_M1_HALL_B_PORT   GPIOB
+<span class="kw">#define</span> APP_M1_HALL_B_PIN    GPIO_PIN_7   <span class="cmt">// PB7 = M1_ENC_B</span>
+<span class="kw">#define</span> APP_M1_HALL_C_PORT   GPIOC
+<span class="kw">#define</span> APP_M1_HALL_C_PIN    GPIO_PIN_15  <span class="cmt">// PC15 = M1_DC_CAL 复用</span>
+<span class="kw">#define</span> APP_M1_HALL_MOTOR_DIR      <span class="num">1</span>
+<span class="kw">#define</span> APP_M1_HALL_PHASE_OFFSET   <span class="num">3.5f</span></code></pre>
+            <div class="tags"><span class="tag tag-cfg">Config</span><span class="tag tag-hw">M1 Init</span></div>
+          </div>
+
+          <!-- 3 -->
+          <div class="entry">
+            <div class="entry-title">③ UART $ST 状态上报帧</div>
+            <div class="entry-desc">
+              在 <code>freertos.c</code> 的 <code>uart2_test_thread</code> 中添加 100 ms 周期的 $ST 上报，
+              方便上位机实时监控 M0/M1 状态。
+            </div>
+            <pre><code><span class="cmt">// 上报格式：</span>
+$ST,&lt;Vbus&gt;,&lt;freq&gt;,&lt;M0h&gt;,&lt;M0c&gt;,&lt;M0v&gt;,&lt;M0i&gt;,&lt;M0e&gt;,&lt;M0s&gt;,&lt;M1h&gt;,...;\r\n
+<span class="cmt">// 字段说明：</span>
+<span class="cmt">// Mxh = Hall state (1-6)   Mxc = current [A]</span>
+<span class="cmt">// Mxv = velocity [rad/s]   Mxi = Iq setpoint [A]</span>
+<span class="cmt">// Mxe = error code         Mxs = enable_control</span></code></pre>
+            <div class="tags"><span class="tag tag-proto">UART Protocol</span></div>
+          </div>
+
+          <!-- 4 -->
+          <div class="entry">
+            <div class="entry-title">④ UART 协议文档 UART_Protocol_Examples.md v1.1</div>
+            <div class="entry-desc">
+              添加错误码表（code 24 = MOTOR_STALL），M1 接线排查指引，以及 V/H/Q 命令完整示例。
+            </div>
+            <div class="tags"><span class="tag tag-proto">Docs</span></div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════ 2025-05-13 ════════════════ -->
+    <section id="d0513">
+      <div class="day-card open">
+        <div class="day-header" onclick="toggle(this)">
+          <span class="day-dot dot-done"></span>
+          <span class="day-title">2025-05-13 &nbsp;·&nbsp; M0 Hall FOC 调试 · 校准时序 · 积分风up · Stall 守卫</span>
+          <span class="day-date">2025-05-13</span>
+          <span class="day-toggle">▾</span>
+        </div>
+        <div class="day-body">
+
+          <!-- 1 -->
+          <div class="entry">
+            <div class="entry-title">① ERROR_PHASE_RESISTANCE_TIMING 修复</div>
+            <div class="entry-desc">
+              <strong>问题：</strong>重新校准时报 timing error，第一次校准成功，第二次概率性失败。<br>
+              <strong>根因：</strong>motor_thread 进入 motor_calibration() 时，<code>M_SIGNAL_PH_CURRENT_MEAS</code>
+              信号位已被 ADC IRQ 置位（PWM 关闭期间 ADC 仍触发）。<code>osSignalWait()</code> 立即返回，
+              此时 TIM8 处于下计数阶段，<code>check_timing</code> 读到 CNT > 1.5×PERIOD → 超时报错。
+            </div>
+            <div class="diff">
+<span class="neu">// motor_thread – 校准前</span>
+<span class="add">+ osSignalWait(M_SIGNAL_PH_CURRENT_MEAS, 0);  // drain 残留信号</span>
+  motor_calibration(motor);
+            </div>
+            <div class="tags"><span class="tag tag-fix">Bug Fix</span><span class="tag tag-cfg">Timing</span></div>
+          </div>
+
+          <!-- 2 -->
+          <div class="entry">
+            <div class="entry-title">② 进入控制环前清空积分器 + drain 信号</div>
+            <div class="entry-desc">
+              重新进入 control_motor_loop 时，上一次运行留下的 vel_integrator_current 残值会在首帧造成电流冲击；
+              同时 DMA/ADC 信号累积导致 FOC_TIMING 错误。
+            </div>
+            <div class="diff">
+<span class="add">+ osSignalWait(M_SIGNAL_PH_CURRENT_MEAS, 0);   // drain stale ADC signals</span>
+<span class="add">+ motor-&gt;vel_integrator_current = 0.0f;          // reset integrator</span>
+            </div>
+            <div class="tags"><span class="tag tag-fix">Bug Fix</span></div>
+          </div>
+
+          <!-- 3 -->
+          <div class="entry">
+            <div class="entry-title">③ ERROR_MOTOR_STALL (code 24) + 3秒 stall 守卫</div>
+            <div class="entry-desc">
+              Hall 模式下，若电机被命令运动但 3 秒内无 Hall 脉冲（转速=0），触发 MOTOR_STALL 错误，
+              防止持续大电流堵转损伤 DRV8301 和电机绕组。
+            </div>
+            <pre><code><span class="cmt">// low_level.h – Error_t 枚举新增</span>
+ERROR_MOTOR_STALL, <span class="cmt">// 24 – Hall 电机堵转超过 3 s</span>
+
+<span class="cmt">// low_level.c – control_motor_loop stall watchdog</span>
+<span class="kw">if</span> (hall_stall_cnt[midx] &gt; (<span class="kw">uint32_t</span>)(<span class="num">3.0f</span> * current_meas_hz)) {
+    motor-&gt;error = ERROR_MOTOR_STALL;
+    <span class="kw">break</span>;
+}</code></pre>
+            <div class="tags"><span class="tag tag-fix">Safety</span><span class="tag tag-cfg">Error Code</span></div>
+          </div>
+
+          <!-- 4 -->
+          <div class="entry">
+            <div class="entry-title">④ Hall 速度 PLL 参数与正向序列</div>
+            <div class="entry-desc">
+              确认 5065 Hall 正向序列：<strong>1→3→2→6→4→5→1</strong>（motor_dir=1 时）。<br>
+              PLL 参数：<code>pll_kp = 2×BW = 400</code>，<code>pll_ki = 0.25×400² = 40000</code>，带宽 200 rad/s。<br>
+              线程优先级：M0 = osPriorityHigh+1，M1 = osPriorityHigh，control_deadline M1 = 1.5×PERIOD。
+            </div>
+            <table>
+              <tr><th>参数</th><th>值</th><th>说明</th></tr>
+              <tr><td><strong>pole_pairs</strong></td><td>7</td><td>14 极电机</td></tr>
+              <tr><td><strong>Hall CPR</strong></td><td>6</td><td>每圈 6 次换相</td></tr>
+              <tr><td><strong>phase_offset</strong></td><td>3.5</td><td>Hall sector 中心对齐</td></tr>
+              <tr><td><strong>pll_bandwidth</strong></td><td>200 rad/s</td><td>Hall 速度 PLL</td></tr>
+              <tr><td><strong>current_loop_bw</strong></td><td>1000 rad/s</td><td>由 R/L 校准得出</td></tr>
+              <tr><td><strong>VBUS</strong></td><td>≈23.6 V</td><td>实测</td></tr>
+            </table>
+            <div class="tags"><span class="tag tag-perf">Tuning</span><span class="tag tag-hw">Hardware</span></div>
+          </div>
+
+          <!-- 5 -->
+          <div class="entry">
+            <div class="entry-title">⑤ M0 Hall FOC 全部 6 个 Bug 修复完成</div>
+            <div class="entry-desc">
+              经过本次会话，M0 Hall 闭环 FOC 确认稳定工作。
+            </div>
+            <div class="info-box green">
+              <strong>M0 验证通过：</strong>$M0,V,5.0; → 正常启动，速度稳定；$M0,H,0; → 正常停止；$ST 帧实时上报正常。
+            </div>
+            <div class="tags"><span class="tag tag-fix">Verified</span></div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div><!-- container -->
+
+<script>
+  function toggle(header) {
+    const card = header.closest('.day-card');
+    card.classList.toggle('open');
+  }
+
+  function nav(a) {
+    // highlight sidebar
+    document.querySelectorAll('#tl li').forEach(li => li.classList.remove('active'));
+    a.closest('li').classList.add('active');
+    // smooth scroll
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // open card
+    const card = target?.querySelector('.day-card');
+    if (card && !card.classList.contains('open')) card.classList.add('open');
+    return false;
+  }
+
+  // Highlight sidebar item on scroll
+  const sections = document.querySelectorAll('section[id]');
+  const lis = document.querySelectorAll('#tl li');
+  window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(sec => {
+      if (sec.getBoundingClientRect().top <= 120) current = sec.id;
+    });
+    lis.forEach(li => {
+      const href = li.querySelector('a')?.getAttribute('href')?.slice(1);
+      li.classList.toggle('active', href === current);
+    });
+  }, { passive: true });
+</script>
+
+</body>
+</html>
