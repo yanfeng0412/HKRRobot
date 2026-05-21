@@ -1,0 +1,45 @@
+# ============================================================
+# sdkconfig.defaults — HKR_Robot ESP32-S3 BLE + 外设配置
+# 运行 "idf.py set-target esp32s3" 后此文件中的设置将自动应用。
+# 若 sdkconfig 已存在，可删除后重新运行 "idf.py reconfigure" 让本文件生效。
+# ============================================================
+
+# ---------- 目标芯片 ----------
+CONFIG_IDF_TARGET="esp32s3"
+
+# ---------- Flash / 分区 ----------
+# 该项目使用自定义分区表，factory app 分区为 0x300000，需至少 4MB flash。
+# 恢复到项目原始 8MB 配置，避免 reconfigure 后回退到默认 1MB single-app 分区。
+# CONFIG_ESPTOOLPY_FLASHSIZE_2MB is not set
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+# CONFIG_PARTITION_TABLE_SINGLE_APP is not set
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# ---------- 蓝牙 / NimBLE ----------
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+
+# 仅启用 BLE（不需要经典蓝牙）
+CONFIG_BT_CONTROLLER_ONLY=n
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+
+# NimBLE 最大连接数
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+
+# NimBLE 首选 ATT MTU（加大可提高吞吐量）
+CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=247
+
+# NimBLE 任务栈大小
+CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=5120
+
+# ---------- FreeRTOS ----------
+# 提高 tick 频率（对低延迟 UART / BLE 有帮助）
+CONFIG_FREERTOS_HZ=1000
+
+# ---------- 日志级别 ----------
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

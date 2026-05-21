@@ -1,0 +1,12 @@
+odrivefw_vkeil\list.o: ../Middlewares/Third_Party/FreeRTOS/Source/list.c
+odrivefw_vkeil\list.o: D:\ProgramApp\Keil\Keil_Core\ARM\ARMCC\Bin\..\include\stdlib.h
+odrivefw_vkeil\list.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/FreeRTOS.h
+odrivefw_vkeil\list.o: D:\ProgramApp\Keil\Keil_Core\ARM\ARMCC\Bin\..\include\stddef.h
+odrivefw_vkeil\list.o: D:\ProgramApp\Keil\Keil_Core\ARM\ARMCC\Bin\..\include\stdint.h
+odrivefw_vkeil\list.o: ../Core/Inc/FreeRTOSConfig.h
+odrivefw_vkeil\list.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/projdefs.h
+odrivefw_vkeil\list.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/portable.h
+odrivefw_vkeil\list.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/deprecated_definitions.h
+odrivefw_vkeil\list.o: ../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F/portmacro.h
+odrivefw_vkeil\list.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/mpu_wrappers.h
+odrivefw_vkeil\list.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/list.h

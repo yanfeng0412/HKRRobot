@@ -1,0 +1,85 @@
+<html>
+<body>
+<pre>
+<h1>µVision Build Log</h1>
+<h2>Tool Versions:</h2>
+IDE-Version: ÂµVision V5.41.0.0
+Copyright (C) 2024 ARM Ltd and ARM Germany GmbH. All rights reserved.
+License Information: aa feng, a, LIC=BUURY-IGICV-BSDYX-H480D-I5FIC-FUTJ1
+ 
+Tool Versions:
+Toolchain:       MDK-ARM Plus  Version: 5.41.0.0
+Toolchain Path:  D:\ProgramApp\Keil\Keil_Core\ARM\ARMCC\Bin
+C Compiler:      Armcc.exe V5.06 update 6 (build 750)
+Assembler:       Armasm.exe V5.06 update 6 (build 750)
+Linker/Locator:  ArmLink.exe V5.06 update 6 (build 750)
+Library Manager: ArmAr.exe V5.06 update 6 (build 750)
+Hex Converter:   FromElf.exe V5.06 update 6 (build 750)
+CPU DLL:         SARMCM3.DLL V5.41.0.0
+Dialog DLL:      DCM.DLL V1.17.5.0
+Target DLL:      STLink\ST-LINKIII-KEIL_SWO.dll V3.3.0.0
+Dialog DLL:      TCM.DLL V1.56.4.0
+ 
+<h2>Project:</h2>
+D:\YF_File\yff\3. FOC\3. OdriveFOC\YF Odrive Code\ODrivefw_v1.3.6_5065\Odrivefw_vKeil\MDK-ARM\Odrivefw_vKeil.uvprojx
+Project File Date:  05/18/2026
+
+<h2>Output:</h2>
+*** Using Compiler 'V5.06 update 6 (build 750)', folder: 'D:\ProgramApp\Keil\Keil_Core\ARM\ARMCC\Bin'
+Build target 'Odrivefw_vKeil'
+compiling freertos.c...
+../MotorControl/low_level.h(267): warning:  #1295-D: Deprecated declaration init_motor_control - give arg types
+      void init_motor_control();
+../MotorControl/low_level.h(282): warning:  #1295-D: Deprecated declaration start_adc_pwm - give arg types
+      void start_adc_pwm();
+../MotorControl/low_level.h(308): warning:  #1295-D: Deprecated declaration update_brake_current - give arg types
+      void update_brake_current();
+../MotorControl/commands.h(131): warning:  #1295-D: Deprecated declaration init_communication - give arg types
+  void init_communication();
+../MotorControl/commands.h(148): warning:  #1295-D: Deprecated declaration usb_update_thread - give arg types
+  void usb_update_thread();
+../Core/Src/freertos.c(240): warning:  #111-D: statement is unreachable
+      vTaskDelete(NULL);
+../Core/Src/freertos.c: 6 warnings, 0 errors
+compiling main.c...
+../MotorControl/low_level.h(267): warning:  #1295-D: Deprecated declaration init_motor_control - give arg types
+      void init_motor_control();
+../MotorControl/low_level.h(282): warning:  #1295-D: Deprecated declaration start_adc_pwm - give arg types
+      void start_adc_pwm();
+../MotorControl/low_level.h(308): warning:  #1295-D: Deprecated declaration update_brake_current - give arg types
+      void update_brake_current();
+../MotorControl/commands.h(131): warning:  #1295-D: Deprecated declaration init_communication - give arg types
+  void init_communication();
+../MotorControl/commands.h(148): warning:  #1295-D: Deprecated declaration usb_update_thread - give arg types
+  void usb_update_thread();
+../Core/Src/main.c: 5 warnings, 0 errors
+linking...
+Program Size: Code=72272 RO-data=4624 RW-data=1464 ZI-data=39192  
+FromELF: creating hex file...
+"Odrivefw_vKeil\Odrivefw_vKeil.axf" - 0 Error(s), 11 Warning(s).
+
+<h2>Software Packages used:</h2>
+
+Package Vendor: ARM
+                https://www.keil.com/pack/ARM.CMSIS.6.1.0.pack
+                ARM::CMSIS@6.1.0
+                CMSIS (Common Microcontroller Software Interface Standard)
+   * Component: CORE Version: 6.1.0
+
+Package Vendor: Keil
+                https://www.keil.com/pack/Keil.STM32F4xx_DFP.3.0.0.pack
+                Keil::STM32F4xx_DFP@3.0.0
+                STMicroelectronics STM32F4 Series Device Support
+
+<h2>Collection of Component include folders:</h2>
+  ./RTE/_Odrivefw_vKeil
+  D:/ProgramApp/Keil/Keil_Pack/ARM/CMSIS/6.1.0/CMSIS/Core/Include
+
+<h2>Collection of Component Files used:</h2>
+
+   * Component: ARM::CMSIS:CORE@6.1.0
+      Include file:  CMSIS/Core/Include/tz_context.h
+Build Time Elapsed:  00:00:04
+</pre>
+</body>
+</html>
